@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package afs;
+option go_package = "primality_afs/pb";
+
+service AFS {
+    rpc TestAuth (TestAuthRequest) returns (TestAuthResponse);
+    rpc FetchFile (FileRequest) returns (stream FileChunk);
+    rpc StoreFile (stream StoreChunk) returns (StoreResponse);
+}
+
+message TestAuthRequest {
+    string filename = 1;
+    int32 version = 2; 
+}
+
+message TestAuthResponse {
+    bool is_valid = 1;
+    int32 server_version = 2; 
+}
+
+message FileRequest {
+    string filename = 1;
+}
+
+message FileChunk {
+    bytes content = 1;
+    int32 version = 2; 
+}
+
+message StoreChunk {
+    string filename = 1; 
+    bytes content = 2;
+}
+
+message StoreResponse {
+    bool success = 1;
+    int32 new_version = 2; 
+}
