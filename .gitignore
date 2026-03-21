@@ -1,4 +1,2 @@
 *.json
 primes.txt
-go.mod
-go.sum
