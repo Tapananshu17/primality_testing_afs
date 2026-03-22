@@ -11,4 +11,4 @@ go mod tidy
 
 # To run
 go run server/main.go
-go run test_app.go
+go run test.go
