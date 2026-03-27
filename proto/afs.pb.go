@@ -21,6 +21,7 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// ─── Client-facing messages (unchanged) ──────────────────────────────────────
 type TestAuthRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Filename      string                 `protobuf:"bytes,1,opt,name=filename,proto3" json:"filename,omitempty"`
@@ -325,6 +326,304 @@ func (x *StoreResponse) GetNewVersion() int32 {
 	return 0
 }
 
+// ─── New messages ─────────────────────────────────────────────────────────────
+type Empty struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Empty) Reset() {
+	*x = Empty{}
+	mi := &file_proto_afs_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Empty) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Empty) ProtoMessage() {}
+
+func (x *Empty) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_afs_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Empty.ProtoReflect.Descriptor instead.
+func (*Empty) Descriptor() ([]byte, []int) {
+	return file_proto_afs_proto_rawDescGZIP(), []int{6}
+}
+
+type PrimaryInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Address       string                 `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"` // e.g. "localhost:50051"
+	IsPrimary     bool                   `protobuf:"varint,2,opt,name=is_primary,json=isPrimary,proto3" json:"is_primary,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PrimaryInfo) Reset() {
+	*x = PrimaryInfo{}
+	mi := &file_proto_afs_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PrimaryInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PrimaryInfo) ProtoMessage() {}
+
+func (x *PrimaryInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_afs_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PrimaryInfo.ProtoReflect.Descriptor instead.
+func (*PrimaryInfo) Descriptor() ([]byte, []int) {
+	return file_proto_afs_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *PrimaryInfo) GetAddress() string {
+	if x != nil {
+		return x.Address
+	}
+	return ""
+}
+
+func (x *PrimaryInfo) GetIsPrimary() bool {
+	if x != nil {
+		return x.IsPrimary
+	}
+	return false
+}
+
+// ReplicateChunk mirrors StoreChunk but also carries the authoritative version.
+type ReplicateChunk struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Filename      string                 `protobuf:"bytes,1,opt,name=filename,proto3" json:"filename,omitempty"`
+	Content       []byte                 `protobuf:"bytes,2,opt,name=content,proto3" json:"content,omitempty"`
+	Version       int32                  `protobuf:"varint,3,opt,name=version,proto3" json:"version,omitempty"` // set only in the first chunk
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReplicateChunk) Reset() {
+	*x = ReplicateChunk{}
+	mi := &file_proto_afs_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReplicateChunk) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReplicateChunk) ProtoMessage() {}
+
+func (x *ReplicateChunk) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_afs_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReplicateChunk.ProtoReflect.Descriptor instead.
+func (*ReplicateChunk) Descriptor() ([]byte, []int) {
+	return file_proto_afs_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *ReplicateChunk) GetFilename() string {
+	if x != nil {
+		return x.Filename
+	}
+	return ""
+}
+
+func (x *ReplicateChunk) GetContent() []byte {
+	if x != nil {
+		return x.Content
+	}
+	return nil
+}
+
+func (x *ReplicateChunk) GetVersion() int32 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+type ReplicateResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	Version       int32                  `protobuf:"varint,2,opt,name=version,proto3" json:"version,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReplicateResponse) Reset() {
+	*x = ReplicateResponse{}
+	mi := &file_proto_afs_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReplicateResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReplicateResponse) ProtoMessage() {}
+
+func (x *ReplicateResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_afs_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReplicateResponse.ProtoReflect.Descriptor instead.
+func (*ReplicateResponse) Descriptor() ([]byte, []int) {
+	return file_proto_afs_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ReplicateResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *ReplicateResponse) GetVersion() int32 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+type HeartbeatRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PrimaryAddr   string                 `protobuf:"bytes,1,opt,name=primary_addr,json=primaryAddr,proto3" json:"primary_addr,omitempty"`
+	Term          int32                  `protobuf:"varint,2,opt,name=term,proto3" json:"term,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HeartbeatRequest) Reset() {
+	*x = HeartbeatRequest{}
+	mi := &file_proto_afs_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HeartbeatRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HeartbeatRequest) ProtoMessage() {}
+
+func (x *HeartbeatRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_afs_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HeartbeatRequest.ProtoReflect.Descriptor instead.
+func (*HeartbeatRequest) Descriptor() ([]byte, []int) {
+	return file_proto_afs_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *HeartbeatRequest) GetPrimaryAddr() string {
+	if x != nil {
+		return x.PrimaryAddr
+	}
+	return ""
+}
+
+func (x *HeartbeatRequest) GetTerm() int32 {
+	if x != nil {
+		return x.Term
+	}
+	return 0
+}
+
+type HeartbeatResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HeartbeatResponse) Reset() {
+	*x = HeartbeatResponse{}
+	mi := &file_proto_afs_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HeartbeatResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HeartbeatResponse) ProtoMessage() {}
+
+func (x *HeartbeatResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_afs_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HeartbeatResponse.ProtoReflect.Descriptor instead.
+func (*HeartbeatResponse) Descriptor() ([]byte, []int) {
+	return file_proto_afs_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *HeartbeatResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
 var File_proto_afs_proto protoreflect.FileDescriptor
 
 const file_proto_afs_proto_rawDesc = "" +
@@ -348,11 +647,34 @@ const file_proto_afs_proto_rawDesc = "" +
 	"\rStoreResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x1f\n" +
 	"\vnew_version\x18\x02 \x01(\x05R\n" +
-	"newVersion2\xa3\x01\n" +
+	"newVersion\"\a\n" +
+	"\x05Empty\"F\n" +
+	"\vPrimaryInfo\x12\x18\n" +
+	"\aaddress\x18\x01 \x01(\tR\aaddress\x12\x1d\n" +
+	"\n" +
+	"is_primary\x18\x02 \x01(\bR\tisPrimary\"`\n" +
+	"\x0eReplicateChunk\x12\x1a\n" +
+	"\bfilename\x18\x01 \x01(\tR\bfilename\x12\x18\n" +
+	"\acontent\x18\x02 \x01(\fR\acontent\x12\x18\n" +
+	"\aversion\x18\x03 \x01(\x05R\aversion\"G\n" +
+	"\x11ReplicateResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
+	"\aversion\x18\x02 \x01(\x05R\aversion\"I\n" +
+	"\x10HeartbeatRequest\x12!\n" +
+	"\fprimary_addr\x18\x01 \x01(\tR\vprimaryAddr\x12\x12\n" +
+	"\x04term\x18\x02 \x01(\x05R\x04term\"#\n" +
+	"\x11HeartbeatResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok2\xcf\x01\n" +
 	"\x03AFS\x127\n" +
 	"\bTestAuth\x12\x14.afs.TestAuthRequest\x1a\x15.afs.TestAuthResponse\x12/\n" +
 	"\tFetchFile\x12\x10.afs.FileRequest\x1a\x0e.afs.FileChunk0\x01\x122\n" +
-	"\tStoreFile\x12\x0f.afs.StoreChunk\x1a\x12.afs.StoreResponse(\x01B\x12Z\x10primality_afs/pbb\x06proto3"
+	"\tStoreFile\x12\x0f.afs.StoreChunk\x1a\x12.afs.StoreResponse(\x01\x12*\n" +
+	"\n" +
+	"GetPrimary\x12\n" +
+	".afs.Empty\x1a\x10.afs.PrimaryInfo2\x85\x01\n" +
+	"\aReplica\x12>\n" +
+	"\rReplicateFile\x12\x13.afs.ReplicateChunk\x1a\x16.afs.ReplicateResponse(\x01\x12:\n" +
+	"\tHeartbeat\x12\x15.afs.HeartbeatRequest\x1a\x16.afs.HeartbeatResponseB\x12Z\x10primality_afs/pbb\x06proto3"
 
 var (
 	file_proto_afs_proto_rawDescOnce sync.Once
@@ -366,27 +688,39 @@ func file_proto_afs_proto_rawDescGZIP() []byte {
 	return file_proto_afs_proto_rawDescData
 }
 
-var file_proto_afs_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_proto_afs_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_proto_afs_proto_goTypes = []any{
-	(*TestAuthRequest)(nil),  // 0: afs.TestAuthRequest
-	(*TestAuthResponse)(nil), // 1: afs.TestAuthResponse
-	(*FileRequest)(nil),      // 2: afs.FileRequest
-	(*FileChunk)(nil),        // 3: afs.FileChunk
-	(*StoreChunk)(nil),       // 4: afs.StoreChunk
-	(*StoreResponse)(nil),    // 5: afs.StoreResponse
+	(*TestAuthRequest)(nil),   // 0: afs.TestAuthRequest
+	(*TestAuthResponse)(nil),  // 1: afs.TestAuthResponse
+	(*FileRequest)(nil),       // 2: afs.FileRequest
+	(*FileChunk)(nil),         // 3: afs.FileChunk
+	(*StoreChunk)(nil),        // 4: afs.StoreChunk
+	(*StoreResponse)(nil),     // 5: afs.StoreResponse
+	(*Empty)(nil),             // 6: afs.Empty
+	(*PrimaryInfo)(nil),       // 7: afs.PrimaryInfo
+	(*ReplicateChunk)(nil),    // 8: afs.ReplicateChunk
+	(*ReplicateResponse)(nil), // 9: afs.ReplicateResponse
+	(*HeartbeatRequest)(nil),  // 10: afs.HeartbeatRequest
+	(*HeartbeatResponse)(nil), // 11: afs.HeartbeatResponse
 }
 var file_proto_afs_proto_depIdxs = []int32{
-	0, // 0: afs.AFS.TestAuth:input_type -> afs.TestAuthRequest
-	2, // 1: afs.AFS.FetchFile:input_type -> afs.FileRequest
-	4, // 2: afs.AFS.StoreFile:input_type -> afs.StoreChunk
-	1, // 3: afs.AFS.TestAuth:output_type -> afs.TestAuthResponse
-	3, // 4: afs.AFS.FetchFile:output_type -> afs.FileChunk
-	5, // 5: afs.AFS.StoreFile:output_type -> afs.StoreResponse
-	3, // [3:6] is the sub-list for method output_type
-	0, // [0:3] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	0,  // 0: afs.AFS.TestAuth:input_type -> afs.TestAuthRequest
+	2,  // 1: afs.AFS.FetchFile:input_type -> afs.FileRequest
+	4,  // 2: afs.AFS.StoreFile:input_type -> afs.StoreChunk
+	6,  // 3: afs.AFS.GetPrimary:input_type -> afs.Empty
+	8,  // 4: afs.Replica.ReplicateFile:input_type -> afs.ReplicateChunk
+	10, // 5: afs.Replica.Heartbeat:input_type -> afs.HeartbeatRequest
+	1,  // 6: afs.AFS.TestAuth:output_type -> afs.TestAuthResponse
+	3,  // 7: afs.AFS.FetchFile:output_type -> afs.FileChunk
+	5,  // 8: afs.AFS.StoreFile:output_type -> afs.StoreResponse
+	7,  // 9: afs.AFS.GetPrimary:output_type -> afs.PrimaryInfo
+	9,  // 10: afs.Replica.ReplicateFile:output_type -> afs.ReplicateResponse
+	11, // 11: afs.Replica.Heartbeat:output_type -> afs.HeartbeatResponse
+	6,  // [6:12] is the sub-list for method output_type
+	0,  // [0:6] is the sub-list for method input_type
+	0,  // [0:0] is the sub-list for extension type_name
+	0,  // [0:0] is the sub-list for extension extendee
+	0,  // [0:0] is the sub-list for field type_name
 }
 
 func init() { file_proto_afs_proto_init() }
@@ -400,9 +734,9 @@ func file_proto_afs_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_afs_proto_rawDesc), len(file_proto_afs_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   12,
 			NumExtensions: 0,
-			NumServices:   1,
+			NumServices:   2,
 		},
 		GoTypes:           file_proto_afs_proto_goTypes,
 		DependencyIndexes: file_proto_afs_proto_depIdxs,

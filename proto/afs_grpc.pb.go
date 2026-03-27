@@ -19,18 +19,23 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AFS_TestAuth_FullMethodName  = "/afs.AFS/TestAuth"
-	AFS_FetchFile_FullMethodName = "/afs.AFS/FetchFile"
-	AFS_StoreFile_FullMethodName = "/afs.AFS/StoreFile"
+	AFS_TestAuth_FullMethodName   = "/afs.AFS/TestAuth"
+	AFS_FetchFile_FullMethodName  = "/afs.AFS/FetchFile"
+	AFS_StoreFile_FullMethodName  = "/afs.AFS/StoreFile"
+	AFS_GetPrimary_FullMethodName = "/afs.AFS/GetPrimary"
 )
 
 // AFSClient is the client API for AFS service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// ── Client-facing service (unchanged API) ────────────────────────────────────
 type AFSClient interface {
 	TestAuth(ctx context.Context, in *TestAuthRequest, opts ...grpc.CallOption) (*TestAuthResponse, error)
 	FetchFile(ctx context.Context, in *FileRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[FileChunk], error)
 	StoreFile(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[StoreChunk, StoreResponse], error)
+	// Clients call this to discover who the current primary is.
+	GetPrimary(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*PrimaryInfo, error)
 }
 
 type aFSClient struct {
@@ -83,13 +88,27 @@ func (c *aFSClient) StoreFile(ctx context.Context, opts ...grpc.CallOption) (grp
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type AFS_StoreFileClient = grpc.ClientStreamingClient[StoreChunk, StoreResponse]
 
+func (c *aFSClient) GetPrimary(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*PrimaryInfo, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PrimaryInfo)
+	err := c.cc.Invoke(ctx, AFS_GetPrimary_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AFSServer is the server API for AFS service.
 // All implementations must embed UnimplementedAFSServer
 // for forward compatibility.
+//
+// ── Client-facing service (unchanged API) ────────────────────────────────────
 type AFSServer interface {
 	TestAuth(context.Context, *TestAuthRequest) (*TestAuthResponse, error)
 	FetchFile(*FileRequest, grpc.ServerStreamingServer[FileChunk]) error
 	StoreFile(grpc.ClientStreamingServer[StoreChunk, StoreResponse]) error
+	// Clients call this to discover who the current primary is.
+	GetPrimary(context.Context, *Empty) (*PrimaryInfo, error)
 	mustEmbedUnimplementedAFSServer()
 }
 
@@ -108,6 +127,9 @@ func (UnimplementedAFSServer) FetchFile(*FileRequest, grpc.ServerStreamingServer
 }
 func (UnimplementedAFSServer) StoreFile(grpc.ClientStreamingServer[StoreChunk, StoreResponse]) error {
 	return status.Error(codes.Unimplemented, "method StoreFile not implemented")
+}
+func (UnimplementedAFSServer) GetPrimary(context.Context, *Empty) (*PrimaryInfo, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetPrimary not implemented")
 }
 func (UnimplementedAFSServer) mustEmbedUnimplementedAFSServer() {}
 func (UnimplementedAFSServer) testEmbeddedByValue()             {}
@@ -166,6 +188,24 @@ func _AFS_StoreFile_Handler(srv interface{}, stream grpc.ServerStream) error {
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type AFS_StoreFileServer = grpc.ClientStreamingServer[StoreChunk, StoreResponse]
 
+func _AFS_GetPrimary_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AFSServer).GetPrimary(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AFS_GetPrimary_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AFSServer).GetPrimary(ctx, req.(*Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AFS_ServiceDesc is the grpc.ServiceDesc for AFS service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -177,6 +217,10 @@ var AFS_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "TestAuth",
 			Handler:    _AFS_TestAuth_Handler,
 		},
+		{
+			MethodName: "GetPrimary",
+			Handler:    _AFS_GetPrimary_Handler,
+		},
 	},
 	Streams: []grpc.StreamDesc{
 		{
@@ -187,6 +231,148 @@ var AFS_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "StoreFile",
 			Handler:       _AFS_StoreFile_Handler,
+			ClientStreams: true,
+		},
+	},
+	Metadata: "proto/afs.proto",
+}
+
+const (
+	Replica_ReplicateFile_FullMethodName = "/afs.Replica/ReplicateFile"
+	Replica_Heartbeat_FullMethodName     = "/afs.Replica/Heartbeat"
+)
+
+// ReplicaClient is the client API for Replica service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// ── Internal replication service (primary → backups only) ────────────────────
+type ReplicaClient interface {
+	// Primary streams the full file content to a backup after a write.
+	ReplicateFile(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[ReplicateChunk, ReplicateResponse], error)
+	// Primary sends periodic heartbeats so backups know it is alive.
+	Heartbeat(ctx context.Context, in *HeartbeatRequest, opts ...grpc.CallOption) (*HeartbeatResponse, error)
+}
+
+type replicaClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewReplicaClient(cc grpc.ClientConnInterface) ReplicaClient {
+	return &replicaClient{cc}
+}
+
+func (c *replicaClient) ReplicateFile(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[ReplicateChunk, ReplicateResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Replica_ServiceDesc.Streams[0], Replica_ReplicateFile_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[ReplicateChunk, ReplicateResponse]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Replica_ReplicateFileClient = grpc.ClientStreamingClient[ReplicateChunk, ReplicateResponse]
+
+func (c *replicaClient) Heartbeat(ctx context.Context, in *HeartbeatRequest, opts ...grpc.CallOption) (*HeartbeatResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HeartbeatResponse)
+	err := c.cc.Invoke(ctx, Replica_Heartbeat_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// ReplicaServer is the server API for Replica service.
+// All implementations must embed UnimplementedReplicaServer
+// for forward compatibility.
+//
+// ── Internal replication service (primary → backups only) ────────────────────
+type ReplicaServer interface {
+	// Primary streams the full file content to a backup after a write.
+	ReplicateFile(grpc.ClientStreamingServer[ReplicateChunk, ReplicateResponse]) error
+	// Primary sends periodic heartbeats so backups know it is alive.
+	Heartbeat(context.Context, *HeartbeatRequest) (*HeartbeatResponse, error)
+	mustEmbedUnimplementedReplicaServer()
+}
+
+// UnimplementedReplicaServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedReplicaServer struct{}
+
+func (UnimplementedReplicaServer) ReplicateFile(grpc.ClientStreamingServer[ReplicateChunk, ReplicateResponse]) error {
+	return status.Error(codes.Unimplemented, "method ReplicateFile not implemented")
+}
+func (UnimplementedReplicaServer) Heartbeat(context.Context, *HeartbeatRequest) (*HeartbeatResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Heartbeat not implemented")
+}
+func (UnimplementedReplicaServer) mustEmbedUnimplementedReplicaServer() {}
+func (UnimplementedReplicaServer) testEmbeddedByValue()                 {}
+
+// UnsafeReplicaServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to ReplicaServer will
+// result in compilation errors.
+type UnsafeReplicaServer interface {
+	mustEmbedUnimplementedReplicaServer()
+}
+
+func RegisterReplicaServer(s grpc.ServiceRegistrar, srv ReplicaServer) {
+	// If the following call panics, it indicates UnimplementedReplicaServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&Replica_ServiceDesc, srv)
+}
+
+func _Replica_ReplicateFile_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(ReplicaServer).ReplicateFile(&grpc.GenericServerStream[ReplicateChunk, ReplicateResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Replica_ReplicateFileServer = grpc.ClientStreamingServer[ReplicateChunk, ReplicateResponse]
+
+func _Replica_Heartbeat_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HeartbeatRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ReplicaServer).Heartbeat(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Replica_Heartbeat_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ReplicaServer).Heartbeat(ctx, req.(*HeartbeatRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// Replica_ServiceDesc is the grpc.ServiceDesc for Replica service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var Replica_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "afs.Replica",
+	HandlerType: (*ReplicaServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "Heartbeat",
+			Handler:    _Replica_Heartbeat_Handler,
+		},
+	},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "ReplicateFile",
+			Handler:       _Replica_ReplicateFile_Handler,
 			ClientStreams: true,
 		},
 	},
