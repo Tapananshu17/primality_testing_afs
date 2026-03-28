@@ -37,8 +37,6 @@ const (
 	heartbeatInt    = 1 * time.Second
 )
 
-// ─── Server struct ────────────────────────────────────────────────────────────
-
 type backupServer struct {
 	pb.UnimplementedAFSServer
 	pb.UnimplementedReplicaServer
@@ -60,8 +58,6 @@ type backupServer struct {
 	peerAddrs []string
 }
 
-// ─── Constructor ──────────────────────────────────────────────────────────────
-
 func newBackupServer(selfAddr, primaryAddr string, peerAddrs []string, dataDir string) *backupServer {
 	s := &backupServer{
 		metadata:      make(map[string]int32),
@@ -72,8 +68,10 @@ func newBackupServer(selfAddr, primaryAddr string, peerAddrs []string, dataDir s
 		peerAddrs:     peerAddrs,
 		lastHeartbeat: time.Now(),
 	}
+
 	os.MkdirAll(s.inputDir, 0755)
 	os.MkdirAll(s.outputDir, 0755)
+
 	s.loadMetadata()
 	s.connectToPrimary(primaryAddr)
 	return s
@@ -82,6 +80,7 @@ func newBackupServer(selfAddr, primaryAddr string, peerAddrs []string, dataDir s
 func (s *backupServer) loadMetadata() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	metaPath := filepath.Join(s.outputDir, metaFile)
 	if data, err := os.ReadFile(metaPath); err == nil {
 		json.Unmarshal(data, &s.metadata)
@@ -100,18 +99,19 @@ func (s *backupServer) connectToPrimary(addr string) {
 		log.Printf("[backup %s] warning: could not connect to primary %s: %v", s.selfAddr, addr, err)
 		return
 	}
+
 	s.primaryMu.Lock()
 	s.primaryAddr = addr
 	s.primaryClient = pb.NewAFSClient(conn)
 	s.primaryMu.Unlock()
+
 	log.Printf("[backup %s] connected to primary %s", s.selfAddr, addr)
 }
-
-// ─── Heartbeat watcher ────────────────────────────────────────────────────────
 
 func (s *backupServer) watchHeartbeat() {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
+
 	for range ticker.C {
 		s.mu.RLock()
 		alreadyPrimary := s.isPrimary
@@ -121,14 +121,13 @@ func (s *backupServer) watchHeartbeat() {
 		if alreadyPrimary {
 			continue
 		}
+
 		if elapsed > electionTimeout {
 			log.Printf("[backup %s] primary timeout (%.1fs) — starting election", s.selfAddr, elapsed.Seconds())
 			s.electSelf()
 		}
 	}
 }
-
-// ─── Election ─────────────────────────────────────────────────────────────────
 
 func (s *backupServer) electSelf() {
 	votes := 1
@@ -141,13 +140,16 @@ func (s *backupServer) electSelf() {
 		wg.Add(1)
 		go func(addr string) {
 			defer wg.Done()
+
 			conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 			if err != nil {
 				return
 			}
 			defer conn.Close()
+
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()
+
 			info, err := pb.NewAFSClient(conn).GetPrimary(ctx, &pb.Empty{})
 			if err != nil || !info.IsPrimary {
 				voteMu.Lock()
@@ -156,6 +158,7 @@ func (s *backupServer) electSelf() {
 			}
 		}(peerAddr)
 	}
+
 	wg.Wait()
 
 	majority := totalNodes/2 + 1
@@ -170,7 +173,6 @@ func (s *backupServer) electSelf() {
 	s.isPrimary = true
 	s.mu.Unlock()
 
-	// Notify peers so they stop their own election timers and update routing.
 	for _, peerAddr := range s.peerAddrs {
 		go func(addr string) {
 			conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -178,8 +180,10 @@ func (s *backupServer) electSelf() {
 				return
 			}
 			defer conn.Close()
+
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 			defer cancel()
+
 			pb.NewReplicaClient(conn).Heartbeat(ctx, &pb.HeartbeatRequest{
 				PrimaryAddr: s.selfAddr,
 				Term:        2,
@@ -187,21 +191,22 @@ func (s *backupServer) electSelf() {
 		}(peerAddr)
 	}
 
-	// Start sending regular heartbeats so the remaining backup stays quiet.
 	go s.runHeartbeats()
 }
 
-// runHeartbeats is started only after winning an election.
 func (s *backupServer) runHeartbeats() {
 	ticker := time.NewTicker(heartbeatInt)
 	defer ticker.Stop()
+
 	for range ticker.C {
 		s.mu.RLock()
 		stillPrimary := s.isPrimary
 		s.mu.RUnlock()
+
 		if !stillPrimary {
 			return
 		}
+
 		for _, peerAddr := range s.peerAddrs {
 			go func(addr string) {
 				conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -209,8 +214,10 @@ func (s *backupServer) runHeartbeats() {
 					return
 				}
 				defer conn.Close()
+
 				ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 				defer cancel()
+
 				pb.NewReplicaClient(conn).Heartbeat(ctx, &pb.HeartbeatRequest{
 					PrimaryAddr: s.selfAddr,
 					Term:        2,
@@ -219,8 +226,6 @@ func (s *backupServer) runHeartbeats() {
 		}
 	}
 }
-
-// ─── Replica service ──────────────────────────────────────────────────────────
 
 func (s *backupServer) Heartbeat(_ context.Context, req *pb.HeartbeatRequest) (*pb.HeartbeatResponse, error) {
 	s.mu.Lock()
@@ -233,6 +238,7 @@ func (s *backupServer) Heartbeat(_ context.Context, req *pb.HeartbeatRequest) (*
 		s.connectToPrimary(req.PrimaryAddr)
 		return &pb.HeartbeatResponse{Ok: true}, nil
 	}
+
 	s.mu.Unlock()
 	return &pb.HeartbeatResponse{Ok: true}, nil
 }
@@ -250,12 +256,14 @@ func (s *backupServer) ReplicateFile(stream pb.Replica_ReplicateFileServer) erro
 		if err != nil {
 			return err
 		}
+
 		if filename == "" {
 			filename = filepath.Base(chunk.Filename)
 		}
 		if chunk.Version != 0 {
 			version = chunk.Version
 		}
+
 		data = append(data, chunk.Content...)
 	}
 
@@ -265,6 +273,7 @@ func (s *backupServer) ReplicateFile(stream pb.Replica_ReplicateFileServer) erro
 
 	finalPath := s.localPath(filename)
 	tmpPath := finalPath + ".tmp"
+
 	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
 		return err
 	}
@@ -281,8 +290,6 @@ func (s *backupServer) ReplicateFile(stream pb.Replica_ReplicateFileServer) erro
 	return stream.SendAndClose(&pb.ReplicateResponse{Success: true, Version: version})
 }
 
-// ─── AFS service ─────────────────────────────────────────────────────────────
-
 func (s *backupServer) GetPrimary(_ context.Context, _ *pb.Empty) (*pb.PrimaryInfo, error) {
 	s.mu.RLock()
 	isPrimary := s.isPrimary
@@ -291,21 +298,24 @@ func (s *backupServer) GetPrimary(_ context.Context, _ *pb.Empty) (*pb.PrimaryIn
 	if isPrimary {
 		return &pb.PrimaryInfo{Address: s.selfAddr, IsPrimary: true}, nil
 	}
+
 	s.primaryMu.RLock()
 	addr := s.primaryAddr
 	s.primaryMu.RUnlock()
-	// IsPrimary=false tells the client this address may be stale.
+
 	return &pb.PrimaryInfo{Address: addr, IsPrimary: false}, nil
 }
 
 func (s *backupServer) TestAuth(_ context.Context, req *pb.TestAuthRequest) (*pb.TestAuthResponse, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
 	base := filepath.Base(req.Filename)
 	ver, exists := s.metadata[base]
 	if !exists {
 		return &pb.TestAuthResponse{IsValid: false, ServerVersion: 0}, nil
 	}
+
 	return &pb.TestAuthResponse{IsValid: req.Version == ver, ServerVersion: ver}, nil
 }
 
@@ -325,6 +335,7 @@ func (s *backupServer) FetchFile(req *pb.FileRequest, stream pb.AFS_FetchFileSer
 
 	buf := make([]byte, chunkSize)
 	first := true
+
 	for {
 		n, readErr := f.Read(buf)
 		if readErr != nil && readErr != io.EOF {
@@ -333,19 +344,21 @@ func (s *backupServer) FetchFile(req *pb.FileRequest, stream pb.AFS_FetchFileSer
 		if n == 0 {
 			break
 		}
+
 		chunk := &pb.FileChunk{Content: buf[:n]}
 		if first {
 			chunk.Version = version
 			first = false
 		}
+
 		if sendErr := stream.Send(chunk); sendErr != nil {
 			return sendErr
 		}
 	}
+
 	return nil
 }
 
-// StoreFile: elected primary handles the write; follower redirects.
 func (s *backupServer) StoreFile(stream pb.AFS_StoreFileServer) error {
 	s.mu.RLock()
 	isPrimary := s.isPrimary
@@ -358,15 +371,14 @@ func (s *backupServer) StoreFile(stream pb.AFS_StoreFileServer) error {
 	s.primaryMu.RLock()
 	addr := s.primaryAddr
 	s.primaryMu.RUnlock()
+
 	return status.Errorf(codes.FailedPrecondition, "not primary; redirect to %s", addr)
 }
 
-// handleWriteAsPrimary performs the full primary write path (collect → replicate
-// to peers → commit locally → update metadata) after this backup is elected.
 func (s *backupServer) handleWriteAsPrimary(stream pb.AFS_StoreFileServer) error {
-	// 1. Collect file from client.
 	var filename string
 	var fileData []byte
+
 	for {
 		chunk, err := stream.Recv()
 		if err == io.EOF {
@@ -375,16 +387,17 @@ func (s *backupServer) handleWriteAsPrimary(stream pb.AFS_StoreFileServer) error
 		if err != nil {
 			return err
 		}
+
 		if filename == "" {
 			filename = filepath.Base(chunk.Filename)
 		}
 		fileData = append(fileData, chunk.Content...)
 	}
+
 	if filename == "" {
 		return status.Error(codes.InvalidArgument, "empty stream or missing filename")
 	}
 
-	// 2. Compute new version.
 	s.mu.Lock()
 	cur := s.metadata[filename]
 	var newVersion int32
@@ -395,7 +408,6 @@ func (s *backupServer) handleWriteAsPrimary(stream pb.AFS_StoreFileServer) error
 	}
 	s.mu.Unlock()
 
-	// 3. Replicate to peer backups (majority quorum).
 	totalNodes := 1 + len(s.peerAddrs)
 	majority := totalNodes/2 + 1
 	results := make(chan bool, len(s.peerAddrs))
@@ -406,7 +418,7 @@ func (s *backupServer) handleWriteAsPrimary(stream pb.AFS_StoreFileServer) error
 		}(peerAddr)
 	}
 
-	acks := 1 // self
+	acks := 1
 	for range s.peerAddrs {
 		if <-results {
 			acks++
@@ -414,13 +426,12 @@ func (s *backupServer) handleWriteAsPrimary(stream pb.AFS_StoreFileServer) error
 	}
 
 	if acks < majority {
-		return status.Errorf(codes.Unavailable,
-			"replication quorum not met (%d/%d acks)", acks, majority)
+		return status.Errorf(codes.Unavailable, "replication quorum not met (%d/%d acks)", acks, majority)
 	}
 
-	// 4. Atomic local commit.
 	finalPath := s.localPath(filename)
 	tmpPath := finalPath + ".tmp"
+
 	if err := os.WriteFile(tmpPath, fileData, 0644); err != nil {
 		return status.Errorf(codes.Internal, "local write failed: %v", err)
 	}
@@ -428,7 +439,6 @@ func (s *backupServer) handleWriteAsPrimary(stream pb.AFS_StoreFileServer) error
 		return status.Errorf(codes.Internal, "local rename failed: %v", err)
 	}
 
-	// 5. Update metadata.
 	s.mu.Lock()
 	s.metadata[filename] = newVersion
 	s.saveMetadataLocked()
@@ -459,11 +469,17 @@ func (s *backupServer) replicateToPeer(addr, filename string, data []byte, versi
 		if end > len(data) {
 			end = len(data)
 		}
-		chunk := &pb.ReplicateChunk{Filename: filename, Content: data[off:end]}
+
+		chunk := &pb.ReplicateChunk{
+			Filename: filename,
+			Content:  data[off:end],
+		}
+
 		if first {
 			chunk.Version = version
 			first = false
 		}
+
 		if err := stream.Send(chunk); err != nil {
 			return false
 		}
@@ -473,8 +489,6 @@ func (s *backupServer) replicateToPeer(addr, filename string, data []byte, versi
 	return err == nil && resp.Success
 }
 
-// ─── Helper ───────────────────────────────────────────────────────────────────
-
 func (s *backupServer) localPath(filename string) string {
 	base := filepath.Base(filename)
 	if base == "primes.txt" {
@@ -483,13 +497,11 @@ func (s *backupServer) localPath(filename string) string {
 	return filepath.Join(s.inputDir, base)
 }
 
-// ─── main ─────────────────────────────────────────────────────────────────────
-
 func main() {
-	portFlag    := flag.String("port",    ":50052",            "listen address for this backup")
-	primaryFlag := flag.String("primary", "localhost:50051",   "address of the current primary")
-	peersFlag   := flag.String("peers",   "",                  "comma-separated addresses of OTHER backups")
-	dataFlag    := flag.String("data",    "./afs_data/server2","root data directory for this backup")
+	portFlag := flag.String("port", ":50052", "listen address for this backup")
+	primaryFlag := flag.String("primary", "localhost:50051", "address of the current primary")
+	peersFlag := flag.String("peers", "", "comma-separated addresses of OTHER backups")
+	dataFlag := flag.String("data", "./afs_data/server2", "root data directory for this backup")
 	flag.Parse()
 
 	selfAddr := "localhost" + *portFlag
@@ -514,7 +526,9 @@ func main() {
 	grpcSrv := grpc.NewServer()
 	pb.RegisterAFSServer(grpcSrv, srv)
 	pb.RegisterReplicaServer(grpcSrv, srv)
+
 	log.Printf("[backup] listening on %s  primary=%s  peers=%v", *portFlag, *primaryFlag, peerAddrs)
+
 	if err := grpcSrv.Serve(lis); err != nil {
 		log.Fatalf("serve failed: %v", err)
 	}

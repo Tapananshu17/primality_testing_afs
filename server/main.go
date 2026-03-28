@@ -1,12 +1,5 @@
 // server/main.go  –  Primary AFS server
 //
-// Responsibilities:
-//   • Serve all client RPCs (TestAuth, FetchFile, StoreFile, GetPrimary).
-//   • On every successful StoreFile, fan-out ReplicateFile to ALL backup nodes
-//     in parallel and wait for a majority (>half of total nodes) to ACK before
-//     returning success to the client.
-//   • Send periodic heartbeats to every backup so they know the primary is alive.
-//
 // Start as:
 //   go run ./server  \
 //       --port :50051 \
@@ -42,24 +35,20 @@ const (
 	heartbeatInt = 1 * time.Second
 )
 
-// ─── Server struct ────────────────────────────────────────────────────────────
-
 type primaryServer struct {
 	pb.UnimplementedAFSServer
 
 	mu       sync.RWMutex
-	metadata map[string]int32 // filename → version
+	metadata map[string]int32
 
-	dataDir  string // root for input + output sub-dirs
-	inputDir string
+	dataDir   string
+	inputDir  string
 	outputDir string
 
-	selfAddr    string                    // e.g. "localhost:50051"
-	backupAddrs []string                  // e.g. ["localhost:50052","localhost:50053"]
-	backups     []pb.ReplicaClient        // live gRPC stubs (one per backup)
+	selfAddr    string
+	backupAddrs []string
+	backups     []pb.ReplicaClient
 }
-
-// ─── Startup / metadata ───────────────────────────────────────────────────────
 
 func newPrimaryServer(selfAddr string, backupAddrs []string, dataDir string) *primaryServer {
 	s := &primaryServer{
@@ -70,10 +59,13 @@ func newPrimaryServer(selfAddr string, backupAddrs []string, dataDir string) *pr
 		selfAddr:    selfAddr,
 		backupAddrs: backupAddrs,
 	}
+
 	os.MkdirAll(s.inputDir, 0755)
 	os.MkdirAll(s.outputDir, 0755)
+
 	s.loadMetadata()
 	s.connectToBackups()
+
 	return s
 }
 
@@ -86,44 +78,25 @@ func (s *primaryServer) loadMetadata() {
 		json.Unmarshal(data, &s.metadata)
 		return
 	}
-	// Bootstrap from input dir if no saved metadata exists.
+
 	entries, _ := os.ReadDir(s.inputDir)
 	for _, e := range entries {
 		if !e.IsDir() {
 			s.metadata[e.Name()] = 1
 		}
 	}
+
 	s.saveMetadataLocked()
 }
 
-// Must be called with s.mu held.
 func (s *primaryServer) saveMetadataLocked() {
 	metaPath := filepath.Join(s.outputDir, metaFile)
 	data, _ := json.MarshalIndent(s.metadata, "", "  ")
 	os.WriteFile(metaPath, data, 0644)
 }
 
-// func (s *primaryServer) connectToBackups() {
-// 	for _, addr := range s.backupAddrs {
-// 		conn, err := grpc.Dial(addr,
-// 			grpc.WithTransportCredentials(insecure.NewCredentials()),
-// 			grpc.WithBlock(),
-// 			grpc.WithTimeout(5*time.Second),
-// 		)
-// 		if err != nil {
-// 			log.Printf("[primary] WARNING: could not connect to backup %s: %v", addr, err)
-// 			// Still append nil so index alignment is preserved; heartbeat will skip nil entries.
-// 			s.backups = append(s.backups, nil)
-// 			continue
-// 		}
-// 		log.Printf("[primary] connected to backup %s", addr)
-// 		s.backups = append(s.backups, pb.NewReplicaClient(conn))
-// 	}
-// }
-
 func (s *primaryServer) connectToBackups() {
 	for _, addr := range s.backupAddrs {
-		// Removed grpc.WithBlock() and grpc.WithTimeout()
 		conn, err := grpc.Dial(addr,
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
 		)
@@ -132,26 +105,29 @@ func (s *primaryServer) connectToBackups() {
 			s.backups = append(s.backups, nil)
 			continue
 		}
+
 		log.Printf("[primary] dial initiated for backup %s", addr)
 		s.backups = append(s.backups, pb.NewReplicaClient(conn))
 	}
 }
-// ─── Heartbeat loop ───────────────────────────────────────────────────────────
 
 func (s *primaryServer) runHeartbeats() {
 	ticker := time.NewTicker(heartbeatInt)
 	defer ticker.Stop()
+
 	for range ticker.C {
 		for i, stub := range s.backups {
 			if stub == nil {
 				continue
 			}
+
 			go func(i int, stub pb.ReplicaClient) {
 				ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 				defer cancel()
+
 				if _, err := stub.Heartbeat(ctx, &pb.HeartbeatRequest{
 					PrimaryAddr: s.selfAddr,
-					Term:        1, // single-term design; extend for full election
+					Term:        1,
 				}); err != nil {
 					log.Printf("[primary] heartbeat to backup[%d] failed: %v", i, err)
 				}
@@ -159,8 +135,6 @@ func (s *primaryServer) runHeartbeats() {
 		}
 	}
 }
-
-// ─── Helper ───────────────────────────────────────────────────────────────────
 
 func (s *primaryServer) filePath(filename string) string {
 	base := filepath.Base(filename)
@@ -170,8 +144,6 @@ func (s *primaryServer) filePath(filename string) string {
 	return filepath.Join(s.inputDir, base)
 }
 
-// ─── Client RPCs ─────────────────────────────────────────────────────────────
-
 func (s *primaryServer) GetPrimary(_ context.Context, _ *pb.Empty) (*pb.PrimaryInfo, error) {
 	return &pb.PrimaryInfo{Address: s.selfAddr, IsPrimary: true}, nil
 }
@@ -179,12 +151,17 @@ func (s *primaryServer) GetPrimary(_ context.Context, _ *pb.Empty) (*pb.PrimaryI
 func (s *primaryServer) TestAuth(_ context.Context, req *pb.TestAuthRequest) (*pb.TestAuthResponse, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
 	base := filepath.Base(req.Filename)
 	serverVer, exists := s.metadata[base]
 	if !exists {
 		return &pb.TestAuthResponse{IsValid: false, ServerVersion: 0}, nil
 	}
-	return &pb.TestAuthResponse{IsValid: req.Version == serverVer, ServerVersion: serverVer}, nil
+
+	return &pb.TestAuthResponse{
+		IsValid:       req.Version == serverVer,
+		ServerVersion: serverVer,
+	}, nil
 }
 
 func (s *primaryServer) FetchFile(req *pb.FileRequest, stream pb.AFS_FetchFileServer) error {
@@ -203,6 +180,7 @@ func (s *primaryServer) FetchFile(req *pb.FileRequest, stream pb.AFS_FetchFileSe
 
 	buf := make([]byte, chunkSize)
 	first := true
+
 	for {
 		n, err := f.Read(buf)
 		if err != nil && err != io.EOF {
@@ -211,20 +189,22 @@ func (s *primaryServer) FetchFile(req *pb.FileRequest, stream pb.AFS_FetchFileSe
 		if n == 0 {
 			break
 		}
+
 		chunk := &pb.FileChunk{Content: buf[:n]}
 		if first {
 			chunk.Version = version
 			first = false
 		}
+
 		if sendErr := stream.Send(chunk); sendErr != nil {
 			return sendErr
 		}
 	}
+
 	return nil
 }
 
 func (s *primaryServer) StoreFile(stream pb.AFS_StoreFileServer) error {
-	// ── 1. Collect all chunks from the client into memory ──────────────────
 	var filename string
 	var fileData []byte
 
@@ -246,7 +226,6 @@ func (s *primaryServer) StoreFile(stream pb.AFS_StoreFileServer) error {
 		return status.Error(codes.InvalidArgument, "empty stream or missing filename")
 	}
 
-	// ── 2. Determine new version ───────────────────────────────────────────
 	s.mu.Lock()
 	cur := s.metadata[filename]
 	var newVersion int32
@@ -257,11 +236,8 @@ func (s *primaryServer) StoreFile(stream pb.AFS_StoreFileServer) error {
 	}
 	s.mu.Unlock()
 
-	// ── 3. Fan-out replication to all backups (parallel) ──────────────────
-	//    We require a majority of the whole cluster (primary + N backups) to
-	//    acknowledge before committing.  Primary counts as 1 vote.
 	totalNodes := 1 + len(s.backups)
-	majority   := totalNodes/2 + 1
+	majority := totalNodes/2 + 1
 
 	type result struct{ ok bool }
 	results := make(chan result, len(s.backups))
@@ -271,13 +247,13 @@ func (s *primaryServer) StoreFile(stream pb.AFS_StoreFileServer) error {
 			results <- result{ok: false}
 			continue
 		}
+
 		go func(stub pb.ReplicaClient) {
 			results <- result{ok: s.replicateTo(stub, filename, fileData, newVersion)}
 		}(stub)
 	}
 
-	// Collect backup ACKs.
-	acks := 1 // primary itself
+	acks := 1
 	for range s.backups {
 		if r := <-results; r.ok {
 			acks++
@@ -289,23 +265,24 @@ func (s *primaryServer) StoreFile(stream pb.AFS_StoreFileServer) error {
 		return status.Errorf(codes.Unavailable,
 			"replication quorum not met (%d/%d acks)", acks, majority)
 	}
+
 	log.Printf("[primary] replication quorum met (%d/%d) for %s", acks, majority, filename)
 
-	// ── 4. Commit locally (atomic rename) ─────────────────────────────────
 	if err := s.commitLocal(filename, fileData); err != nil {
 		return status.Errorf(codes.Internal, "local commit failed: %v", err)
 	}
 
-	// ── 5. Update metadata ─────────────────────────────────────────────────
 	s.mu.Lock()
 	s.metadata[filename] = newVersion
 	s.saveMetadataLocked()
 	s.mu.Unlock()
 
-	return stream.SendAndClose(&pb.StoreResponse{Success: true, NewVersion: newVersion})
+	return stream.SendAndClose(&pb.StoreResponse{
+		Success:    true,
+		NewVersion: newVersion,
+	})
 }
 
-// replicateTo sends the full file to one backup via the Replica.ReplicateFile stream.
 func (s *primaryServer) replicateTo(stub pb.ReplicaClient, filename string, data []byte, version int32) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -316,21 +293,23 @@ func (s *primaryServer) replicateTo(stub pb.ReplicaClient, filename string, data
 		return false
 	}
 
-	// Stream the data in chunks.
 	first := true
 	for off := 0; off < len(data); off += chunkSize {
 		end := off + chunkSize
 		if end > len(data) {
 			end = len(data)
 		}
+
 		chunk := &pb.ReplicateChunk{
 			Filename: filename,
 			Content:  data[off:end],
 		}
+
 		if first {
 			chunk.Version = version
 			first = false
 		}
+
 		if err := stream.Send(chunk); err != nil {
 			log.Printf("[primary] send chunk to backup failed: %v", err)
 			return false
@@ -342,25 +321,25 @@ func (s *primaryServer) replicateTo(stub pb.ReplicaClient, filename string, data
 		log.Printf("[primary] backup ReplicateFile failed: err=%v success=%v", err, resp.GetSuccess())
 		return false
 	}
+
 	return true
 }
 
-// commitLocal writes data atomically via a temp file + rename.
 func (s *primaryServer) commitLocal(filename string, data []byte) error {
 	finalPath := s.filePath(filename)
 	tmpPath := finalPath + ".tmp"
+
 	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
 		return err
 	}
+
 	return os.Rename(tmpPath, finalPath)
 }
 
-// ─── main ─────────────────────────────────────────────────────────────────────
-
 func main() {
-	portFlag    := flag.String("port",    ":50051",          "listen address for this primary node")
-	backupFlag  := flag.String("backups", "",                "comma-separated backup addresses")
-	dataFlag    := flag.String("data",   "./afs_data/server1", "root data directory")
+	portFlag := flag.String("port", ":50051", "listen address for this primary node")
+	backupFlag := flag.String("backups", "", "comma-separated backup addresses")
+	dataFlag := flag.String("data", "./afs_data/server1", "root data directory")
 	flag.Parse()
 
 	var backupAddrs []string
@@ -375,8 +354,6 @@ func main() {
 	selfAddr := "localhost" + *portFlag
 
 	srv := newPrimaryServer(selfAddr, backupAddrs, *dataFlag)
-
-	// Start heartbeat loop in background.
 	go srv.runHeartbeats()
 
 	lis, err := net.Listen("tcp", *portFlag)
@@ -386,7 +363,9 @@ func main() {
 
 	grpcSrv := grpc.NewServer()
 	pb.RegisterAFSServer(grpcSrv, srv)
+
 	log.Printf("[primary] listening on %s  backups=%v", *portFlag, backupAddrs)
+
 	if err := grpcSrv.Serve(lis); err != nil {
 		log.Fatalf("serve failed: %v", err)
 	}
