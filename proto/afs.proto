@@ -1,33 +1,28 @@
 syntax = "proto3";
 
 package afs;
+
 option go_package = "primality_afs/pb";
 
-// ── Client-facing service (unchanged API) ────────────────────────────────────
 service AFS {
-    rpc TestAuth  (TestAuthRequest)          returns (TestAuthResponse);
-    rpc FetchFile (FileRequest)              returns (stream FileChunk);
-    rpc StoreFile (stream StoreChunk)        returns (StoreResponse);
-    // Clients call this to discover who the current primary is.
-    rpc GetPrimary (Empty)                   returns (PrimaryInfo);
+    rpc TestAuth  (TestAuthRequest)   returns (TestAuthResponse);
+    rpc FetchFile (FileRequest)       returns (stream FileChunk);
+    rpc StoreFile (stream StoreChunk) returns (StoreResponse);
+    rpc GetPrimary (Empty)            returns (PrimaryInfo);
 }
 
-// ── Internal replication service (primary → backups only) ────────────────────
 service Replica {
-    // Primary streams the full file content to a backup after a write.
     rpc ReplicateFile (stream ReplicateChunk) returns (ReplicateResponse);
-    // Primary sends periodic heartbeats so backups know it is alive.
-    rpc Heartbeat     (HeartbeatRequest)       returns (HeartbeatResponse);
+    rpc Heartbeat     (HeartbeatRequest)      returns (HeartbeatResponse);
 }
 
-// ─── Client-facing messages (unchanged) ──────────────────────────────────────
 message TestAuthRequest {
     string filename = 1;
     int32  version  = 2;
 }
 
 message TestAuthResponse {
-    bool  is_valid      = 1;
+    bool  is_valid       = 1;
     int32 server_version = 2;
 }
 
@@ -50,19 +45,17 @@ message StoreResponse {
     int32 new_version = 2;
 }
 
-// ─── New messages ─────────────────────────────────────────────────────────────
 message Empty {}
 
 message PrimaryInfo {
-    string address = 1;   // e.g. "localhost:50051"
+    string address    = 1;
     bool   is_primary = 2;
 }
 
-// ReplicateChunk mirrors StoreChunk but also carries the authoritative version.
 message ReplicateChunk {
     string filename = 1;
     bytes  content  = 2;
-    int32  version  = 3;  // set only in the first chunk
+    int32  version  = 3;
 }
 
 message ReplicateResponse {
@@ -76,5 +69,5 @@ message HeartbeatRequest {
 }
 
 message HeartbeatResponse {
-    bool  ok = 1;
+    bool ok = 1;
 }
