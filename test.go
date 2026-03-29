@@ -1,27 +1,22 @@
 // demo/test.go
 //
 // End-to-end demo for the primary-backup AFS cluster.
-//
-// Prerequisites — start the cluster in three separate terminals first:
-//
+// Start the cluster in three separate terminals first:
 //   Terminal 1 (primary):
 //     go run ./server --port :50051 --backups localhost:50052,localhost:50053 --data ./afs_data/server1
-//
 //   Terminal 2 (backup 1):
 //     go run ./backup --port :50052 --primary localhost:50051 --peers localhost:50053 --data ./afs_data/server2
-//
 //   Terminal 3 (backup 2):
 //     go run ./backup --port :50053 --primary localhost:50051 --peers localhost:50052 --data ./afs_data/server3
-//
-// Then run this file:
-//   go run test.go
-//
-// The demo runs five scenarios in sequence:
+
+// The following will be run as a part of the test:
 //   1. Basic read from primary
-//   2. Write + replication verification (read back from each backup directly)
+//   2. Write + replication verification
 //   3. Cache hit (TestAuth short-circuit)
 //   4. Two clients writing concurrently
-//   5. Primary failure simulation (kill primary manually when prompted)
+//   5. Server crash during read (Download failover)
+//   6. Client crash during write (Whole file caching check)
+//   7. Primary failure simulation
 
 package main
 
@@ -39,13 +34,10 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	"primality_afs/client"
-	pb "primality_afs/proto" // Add your proto package
+	pb "primality_afs/proto"
 )
 
-// clusterAddrs is the full list of nodes.  The client will discover the primary.
 const clusterAddrs = "localhost:50051,localhost:50052,localhost:50053"
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 func must(label string, err error) {
 	if err != nil {
@@ -53,31 +45,24 @@ func must(label string, err error) {
 	}
 }
 
-func header(title string) {
-	bar := strings.Repeat("─", 60)
-	fmt.Printf("\n%s\n  %s\n%s\n", bar, title, bar)
-}
+func header(title string) { fmt.Printf("\n--- %s ---\n", title) }
+func pass(msg string)     { fmt.Printf("OK: %s\n", msg) }
+func info(msg string)     { fmt.Printf("INFO: %s\n", msg) }
+func warn(msg string)     { fmt.Printf("WARN: %s\n", msg) }
 
-func pass(msg string) { fmt.Printf("  ✓  %s\n", msg) }
-func info(msg string) { fmt.Printf("  ·  %s\n", msg) }
-func warn(msg string) { fmt.Printf("  ⚠  %s\n", msg) }
-
-// newClient creates a fresh AFS client with its own cache directory.
 func newClient(name string) *client.AFSClient {
 	cacheDir := fmt.Sprintf("/tmp/afs_%s", name)
-	os.RemoveAll(cacheDir) // start with an empty cache every run
+	os.RemoveAll(cacheDir)
 	c, err := client.InitAFS(clusterAddrs, cacheDir)
 	must("InitAFS:"+name, err)
-	info(fmt.Sprintf("client %q connected (cache: %s)", name, cacheDir))
 	return c
 }
 
-// ─── Scenario 1: Basic read from primary ─────────────────────────────────────
-
 func scenario1BasicRead() {
-	header("Scenario 1 — Basic read (cache miss → download from primary)")
+	header("Scenario 1: Basic read")
 
 	c := newClient("reader1")
+	info("client 'reader1' connected")
 
 	fd, err := c.AFS_Open("input_dataset_001.txt", os.O_RDONLY)
 	must("Open input_dataset_001.txt", err)
@@ -90,33 +75,25 @@ func scenario1BasicRead() {
 		warn("file was empty or read returned 0 bytes")
 	} else {
 		pass(fmt.Sprintf("read %d bytes from input_dataset_001.txt", n))
-		fmt.Printf("\n--- file content (first 200 bytes) ---\n%s\n------\n",
-			truncate(string(buf[:n]), 200))
+		fmt.Printf("Content preview:\n%s\n", truncate(string(buf[:n]), 200))
 	}
 }
 
-// ─── Scenario 2: Write + replication check ───────────────────────────────────
-
 func scenario2WriteAndVerify() {
-	header("Scenario 2 — Write to primary, verify replication on both backups")
+	header("Scenario 2: Write to primary, verify replication")
 
-	// Write via client (goes to primary, which replicates before ACK-ing).
 	writer := newClient("writer1")
-
-	payload := fmt.Sprintf("replicated-write test  timestamp=%d\n", time.Now().Unix())
+	payload := fmt.Sprintf("replicated-write test timestamp=%d\n", time.Now().Unix())
 
 	fd, err := writer.AFS_Open("primes.txt", os.O_CREATE|os.O_WRONLY|os.O_TRUNC)
 	must("Open primes.txt for write", err)
 	_, err = writer.AFS_Write(fd, []byte(payload))
 	must("Write payload", err)
-	must("Close (triggers upload + replication)", writer.AFS_Close(fd))
-	pass("StoreFile completed — primary replicated to backups before ACK")
+	must("Close file", writer.AFS_Close(fd))
+	pass("StoreFile completed")
 
-	// Give the cluster a moment
 	time.Sleep(200 * time.Millisecond)
 
-	// Now read the file back using a RAW gRPC connection to bypass the 
-	// AFSClient's automatic primary-discovery routing.
 	backups := []string{"localhost:50052", "localhost:50053"}
 	for _, addr := range backups {
 		conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -127,7 +104,7 @@ func scenario2WriteAndVerify() {
 
 		backupClient := pb.NewAFSClient(conn)
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		
+
 		stream, err := backupClient.FetchFile(ctx, &pb.FileRequest{Filename: "primes.txt"})
 		if err != nil {
 			warn(fmt.Sprintf("backup %s FetchFile failed: %v", addr, err))
@@ -148,51 +125,42 @@ func scenario2WriteAndVerify() {
 			}
 			gotBytes = append(gotBytes, chunk.Content...)
 		}
-		
+
 		cancel()
 		conn.Close()
 
 		got := string(gotBytes)
 		if strings.TrimSpace(got) == strings.TrimSpace(payload) {
-			pass(fmt.Sprintf("backup %s has the correct replicated data directly on disk", addr))
+			pass(fmt.Sprintf("backup %s verified", addr))
 		} else {
-			warn(fmt.Sprintf("backup %s data mismatch!\n    want: %q\n    got:  %q",
-				addr, payload, got))
+			warn(fmt.Sprintf("backup %s mismatch: want %q, got %q", addr, payload, got))
 		}
 	}
 }
 
-// ─── Scenario 3: Cache hit (TestAuth short-circuit) ──────────────────────────
-
 func scenario3CacheHit() {
-	header("Scenario 3 — Second open of same file uses local cache (TestAuth)")
+	header("Scenario 3: Cache hit")
 
 	c := newClient("cacher1")
 
-	// First open: cache miss, downloads the file.
-	info("first open → expect cache miss (download)")
+	info("first open (expect download)")
 	fd, err := c.AFS_Open("input_dataset_001.txt", os.O_RDONLY)
 	must("first open", err)
 	must("first close", c.AFS_Close(fd))
-	pass("first open complete — file cached locally")
+	pass("first open complete")
 
-	// Second open: file version unchanged on server → TestAuth returns valid →
-	// client skips the download entirely.
-	info("second open → expect cache hit (no download)")
+	info("second open (expect cache hit)")
 	start := time.Now()
 	fd2, err := c.AFS_Open("input_dataset_001.txt", os.O_RDONLY)
 	must("second open", err)
 	must("second close", c.AFS_Close(fd2))
 	elapsed := time.Since(start)
 
-	// A cache hit avoids a streaming RPC — it should be noticeably faster.
-	pass(fmt.Sprintf("second open returned in %v (cache hit — no FetchFile RPC)", elapsed))
+	pass(fmt.Sprintf("second open took %v", elapsed))
 }
 
-// ─── Scenario 4: Concurrent writes from two clients ──────────────────────────
-
 func scenario4ConcurrentWrites() {
-	header("Scenario 4 — Two clients writing different files concurrently")
+	header("Scenario 4: Concurrent writes")
 
 	var wg sync.WaitGroup
 	errors := make(chan error, 2)
@@ -214,11 +182,11 @@ func scenario4ConcurrentWrites() {
 			errors <- fmt.Errorf("[%s] close: %w", clientName, err)
 			return
 		}
-		pass(fmt.Sprintf("client %q uploaded %q successfully", clientName, filename))
+		pass(fmt.Sprintf("client %q uploaded %q", clientName, filename))
 	}
 
 	wg.Add(2)
-	go writeFile("concurrent_A", "primes.txt",           "2\n3\n5\n7\n11\n")
+	go writeFile("concurrent_A", "primes.txt", "2\n3\n5\n7\n11\n")
 	go writeFile("concurrent_B", "input_dataset_002.txt", "concurrent write from client B\n")
 	wg.Wait()
 	close(errors)
@@ -228,43 +196,121 @@ func scenario4ConcurrentWrites() {
 	}
 }
 
-// ─── Scenario 5: Primary failure + client redirect ────────────────────────────
+func scenario5ServerCrashDuringRead() {
+	header("Scenario 5: Server crash during read")
 
-func scenario5PrimaryFailure() {
-	header("Scenario 5 — Primary failure & automatic client redirect")
+	c1 := newClient("setup_client")
 
-	fmt.Println(`
-  ACTION REQUIRED:
-  ─────────────────────────────────────────────────────────
-  Kill the PRIMARY server (the one on :50051) right now.
-  Then press ENTER to continue.
-  ─────────────────────────────────────────────────────────`)
-	fmt.Print("  Press ENTER when primary is dead > ")
+	largeData := make([]byte, 100*1024*1024)
+	for i := range largeData {
+		largeData[i] = 'A' + byte(i%26)
+	}
+	info("uploading a 100MB test file...")
+	fd, err := c1.AFS_Open("large_read_test.txt", os.O_CREATE|os.O_WRONLY|os.O_TRUNC)
+	must("open large_read_test.txt", err)
+	c1.AFS_Write(fd, largeData)
+	must("close large file", c1.AFS_Close(fd))
+	pass("100MB file uploaded.")
+
+	fmt.Println("\nACTION REQUIRED:")
+	fmt.Println("1. Go to your PRIMARY server terminal (:50051).")
+	fmt.Println("2. Get ready to hit Ctrl+C.")
+	fmt.Println("3. Come back here, press ENTER.")
+	fmt.Println("4. IMMEDIATELY switch back and hit Ctrl+C!")
+	fmt.Print("Press ENTER to start the download loop > ")
 	fmt.Scanln()
 
-	info("waiting 5 s for backups to elect a new primary…")
+	successAfterFailover := false
+	info("starting continuous read loop. KILL THE PRIMARY NOW!")
+
+	for i := 0; i < 100; i++ {
+		fmt.Printf("downloading... (attempt %d/100)\r", i+1)
+
+		start := time.Now()
+
+		c2 := newClient(fmt.Sprintf("reader_loop_%d", i))
+		fd2, err := c2.AFS_Open("large_read_test.txt", os.O_RDONLY)
+
+		if err != nil {
+			warn(fmt.Sprintf("\nread failed: %v", err))
+			break
+		}
+
+		duration := time.Since(start)
+		c2.AFS_Close(fd2)
+
+		if duration > 1*time.Second {
+			fmt.Printf("\n")
+			pass(fmt.Sprintf("Failover triggered and handled mid-read. Took %v", duration))
+			successAfterFailover = true
+			break
+		}
+	}
+	fmt.Printf("\n")
+
+	if !successAfterFailover {
+		warn("Loop finished before failover was detected.")
+	}
+}
+
+func scenario6ClientCrashDuringWrite() {
+	header("Scenario 6: Client crash during write")
+
+	c1 := newClient("doomed_client")
+	info("doomed_client opening 'partial_test.txt'...")
+
+	fd, err := c1.AFS_Open("partial_test.txt", os.O_CREATE|os.O_WRONLY|os.O_TRUNC)
+	must("open partial_test.txt", err)
+
+	info("writing data to local cache...")
+	c1.AFS_Write(fd, []byte("This is a partial write. The client will crash before closing."))
+
+	info("SIMULATING CLIENT CRASH... (abandoning without calling AFS_Close)")
+
+	os.RemoveAll("/tmp/afs_doomed_client")
+
+	info("verifying server does NOT have the partial file...")
+
+	time.Sleep(500 * time.Millisecond)
+
+	c2 := newClient("verifier_client")
+	_, err = c2.AFS_Open("partial_test.txt", os.O_RDONLY)
+	if err != nil {
+		pass(fmt.Sprintf("SUCCESS: File does not exist on server (Error: %v)", err))
+	} else {
+		warn("FAILURE: File exists on the server.")
+	}
+}
+
+func scenario7PrimaryFailure() {
+	header("Scenario 7: Primary failure & client redirect")
+
+	fmt.Println("\nACTION REQUIRED:")
+	fmt.Println("If you haven't already, kill the PRIMARY server (:50051).")
+	fmt.Println("Ensure only the backups are running.")
+	fmt.Print("Press ENTER when primary is dead > ")
+	fmt.Scanln()
+
+	info("waiting 5s for backups to elect a new primary...")
 	time.Sleep(5 * time.Second)
 
-	// The client discovers the cluster at startup; after primary death it will
-	// get a redirect on the first write and retry automatically.
 	c := newClient("post_failure_client")
 
-	info("attempting write — client should redirect to new primary automatically")
+	info("attempting write...")
 	fd, err := c.AFS_Open("primes.txt", os.O_CREATE|os.O_WRONLY|os.O_TRUNC)
 	if err != nil {
 		warn(fmt.Sprintf("open after failover failed: %v", err))
 		return
 	}
-	payload := fmt.Sprintf("written after primary failure  t=%d\n", time.Now().Unix())
+	payload := fmt.Sprintf("written after primary failure t=%d\n", time.Now().Unix())
 	c.AFS_Write(fd, []byte(payload))
 
 	if err := c.AFS_Close(fd); err != nil {
 		warn(fmt.Sprintf("upload after failover failed: %v", err))
 		return
 	}
-	pass("write succeeded after primary failure — client redirected to new primary")
+	pass("write succeeded after primary failure")
 
-	// Read it back to confirm the new primary is serving correctly.
 	fd2, err := c.AFS_Open("primes.txt", os.O_RDONLY)
 	if err != nil {
 		warn(fmt.Sprintf("read-back after failover failed: %v", err))
@@ -276,37 +322,33 @@ func scenario5PrimaryFailure() {
 	pass(fmt.Sprintf("read-back OK: %q", strings.TrimSpace(string(buf[:n]))))
 }
 
-// ─── Utilities ────────────────────────────────────────────────────────────────
-
 func truncate(s string, max int) string {
 	if len(s) <= max {
 		return s
 	}
-	return s[:max] + "…"
+	return s[:max] + "..."
 }
 
-// ─── Entry point ──────────────────────────────────────────────────────────────
-
 func main() {
-	fmt.Println("╔══════════════════════════════════════════════════════════════╗")
-	fmt.Println("║          AFS Primary-Backup Replication — Demo Test          ║")
-	fmt.Println("╚══════════════════════════════════════════════════════════════╝")
-	fmt.Printf("  cluster: %s\n", clusterAddrs)
-	fmt.Printf("  time:    %s\n", time.Now().Format(time.RFC3339))
+	fmt.Println("AFS Primary-Backup Replication - Demo Test")
+	fmt.Printf("Cluster: %s\n", clusterAddrs)
+	fmt.Printf("Time: %s\n", time.Now().Format(time.RFC3339))
 
 	scenario1BasicRead()
 	scenario2WriteAndVerify()
 	scenario3CacheHit()
 	scenario4ConcurrentWrites()
 
-	fmt.Printf("\n%s\n", strings.Repeat("─", 60))
-	fmt.Print("  Run failure scenario (Scenario 5)? [y/N] > ")
+	fmt.Println("\n------------------------------------------------------------")
+	fmt.Print("Run crash scenarios (Scenarios 5, 6 & 7)? [y/N] > ")
 	var choice string
 	fmt.Scanln(&choice)
 	if strings.ToLower(strings.TrimSpace(choice)) == "y" {
-		scenario5PrimaryFailure()
+		scenario5ServerCrashDuringRead()
+		scenario6ClientCrashDuringWrite()
+		scenario7PrimaryFailure()
 	} else {
-		info("skipping Scenario 5 (primary failure test)")
+		info("skipping crash scenarios")
 	}
 
 	header("All scenarios complete")

@@ -285,10 +285,50 @@ func (c *AFSClient) AFS_Close(fd int) error {
 }
 
 func (c *AFSClient) downloadFile(filename string, flag int, localPath string) error {
-	c.mu.Lock()
-	primaryClient := c.primaryClient
-	c.mu.Unlock()
+	var lastErr error
 
+	for attempt := 0; attempt < maxRedirects; attempt++ {
+		c.mu.Lock()
+		primaryClient := c.primaryClient
+		c.mu.Unlock()
+
+		err := c.doSingleDownload(primaryClient, filename, flag, localPath)
+		if err == nil {
+			return nil 
+		}
+		
+		lastErr = err
+
+		if redirectAddr, ok := extractRedirectAddr(err); ok {
+			c.mu.Lock()
+			dialErr := c.dialAddr(redirectAddr)
+			c.mu.Unlock()
+			if dialErr == nil {
+				continue
+			}
+		}
+
+		if st, ok := status.FromError(err); ok &&
+			(st.Code() == codes.Unavailable || st.Code() == codes.FailedPrecondition) {
+
+			c.mu.Lock()
+			discErr := c.refreshPrimary()
+			c.mu.Unlock()
+			if discErr == nil {
+				continue 
+			}
+		}
+
+
+		if st, ok := status.FromError(err); ok && st.Code() == codes.NotFound {
+			return err
+		}
+	}
+
+	return fmt.Errorf("exceeded max retries (%d) downloading %s: %v", maxRedirects, filename, lastErr)
+}
+
+func (c *AFSClient) doSingleDownload(primaryClient pb.AFSClient, filename string, flag int, localPath string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
 	defer cancel()
 
@@ -308,7 +348,8 @@ func (c *AFSClient) downloadFile(filename string, flag int, localPath string) er
 		return err
 	}
 
-	outFile, err := os.Create(localPath)
+	tmpPath := localPath + ".tmp"
+	outFile, err := os.Create(tmpPath)
 	if err != nil {
 		return err
 	}
@@ -322,7 +363,21 @@ func (c *AFSClient) downloadFile(filename string, flag int, localPath string) er
 		}
 		if err != nil {
 			outFile.Close()
-			return err
+			os.Remove(tmpPath)
+
+			st, _ := status.FromError(err)
+			if st.Code() == codes.NotFound && (flag&os.O_CREATE != 0) {
+				if writeErr := os.WriteFile(localPath, []byte{}, 0644); writeErr != nil {
+					return writeErr
+				}
+				c.mu.Lock()
+				c.cacheMeta[filename] = 0
+				c.saveCacheMeta()
+				c.mu.Unlock()
+				return nil
+			}
+
+			return err 
 		}
 		if chunk.Version != 0 {
 			newVersion = chunk.Version
@@ -331,6 +386,10 @@ func (c *AFSClient) downloadFile(filename string, flag int, localPath string) er
 	}
 
 	outFile.Close()
+
+	if err := os.Rename(tmpPath, localPath); err != nil {
+		return err
+	}
 
 	c.mu.Lock()
 	c.cacheMeta[filename] = newVersion
