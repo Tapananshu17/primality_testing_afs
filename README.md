@@ -29,3 +29,5 @@ go mod tidy
    3. Cache hit (TestAuth short-circuit)
    4. Two clients writing concurrently
    5. Primary failure simulation (kill primary manually when prompted)
+   6. Client crash during write (Whole file caching check)
+   7. Primary failure simulation

@@ -1,23 +1,4 @@
 // demo/test.go
-//
-// End-to-end demo for the primary-backup AFS cluster.
-// Start the cluster in three separate terminals first:
-//   Terminal 1 (primary):
-//     go run ./server --port :50051 --backups localhost:50052,localhost:50053 --data ./afs_data/server1
-//   Terminal 2 (backup 1):
-//     go run ./backup --port :50052 --primary localhost:50051 --peers localhost:50053 --data ./afs_data/server2
-//   Terminal 3 (backup 2):
-//     go run ./backup --port :50053 --primary localhost:50051 --peers localhost:50052 --data ./afs_data/server3
-
-// The following will be run as a part of the test:
-//   1. Basic read from primary
-//   2. Write + replication verification
-//   3. Cache hit (TestAuth short-circuit)
-//   4. Two clients writing concurrently
-//   5. Server crash during read (Download failover)
-//   6. Client crash during write (Whole file caching check)
-//   7. Primary failure simulation
-
 package main
 
 import (
