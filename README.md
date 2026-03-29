@@ -23,11 +23,19 @@ go mod tidy
  Then run this file:
    go run test.go
 
- The demo runs five scenarios in sequence:
+ The demo runs seven scenarios in sequence:
    1. Basic read from primary
    2. Write + replication verification (read back from each backup directly)
    3. Cache hit (TestAuth short-circuit)
    4. Two clients writing concurrently
-   5. Primary failure simulation (kill primary manually when prompted)
+   5. Server crash during read (kill primary manually mid-download to test graceful failover)
    6. Client crash during write (Whole file caching check)
-   7. Primary failure simulation
+   7. Primary failure redirect (verify new writes/reads route to the newly elected primary)
+  
+
+### Crash Testing Notes
+ 
+Scenario 5: Server crash during read (Mid-operation Failover)
+* **Action:** The test uploads a 100MB file and begins a continuous download loop. You will be prompted to manually kill the Primary server (`Ctrl+C` on Terminal 1) right in the middle of a read operation.
+* **Expected Outcome:** The client's active download temporarily stalls as the connection drops. The backups detect the primary's timeout and elect a new primary. Within ~4-5 seconds, the client automatically catches the disconnect, queries the new primary, and finishes the read without crashing or corrupting data.
+* **Expected Log:** `OK: Failover triggered and handled mid-read. Took 4.67s`
