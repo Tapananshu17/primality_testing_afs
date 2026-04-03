@@ -1,3 +1,3 @@
 *.json
 primes.txt
-large_read_test.txt
+large_read_test.txt.DS_Store
