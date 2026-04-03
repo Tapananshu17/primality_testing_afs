@@ -1,10 +1,3 @@
-// coordinator_worker/coordinator/coordinator.go
-//
-// Task 4 — Coordinator-Worker distributed prime finder.
-//
-// IsPrime is injected as a function argument so this package has zero
-// dependency on the primality logic and can be tested independently.
-
 package coordinator
 
 import (
@@ -21,21 +14,13 @@ import (
 	"time"
 
 	"primality_afs/client"
+	"primality_afs/coordinator_worker/worker"
 )
 
-// NumWorkers is the default number of parallel goroutine workers.
 const NumWorkers = 5
 
-// chunkSize is how many numbers we hand to each worker per job.
-const chunkSize = 10_000
+const chunkSize = 10000
 
-// WorkChunk is one unit of work passed from coordinator → worker.
-type WorkChunk struct {
-	ID     int
-	Values []uint64
-}
-
-// Stats is the summary returned to the caller after the run completes.
 type Stats struct {
 	InputFiles   int
 	TotalNumbers int
@@ -44,31 +29,6 @@ type Stats struct {
 	Duration     time.Duration
 }
 
-// worker reads chunks from jobs, tests each number, sends primes to results.
-func worker(id int, jobs <-chan WorkChunk, results chan<- uint64, wg *sync.WaitGroup, found *atomic.Int64, isPrime func(uint64) bool) {
-	defer wg.Done()
-	for chunk := range jobs {
-		local := 0
-		for _, n := range chunk.Values {
-			if isPrime(n) {
-				results <- n
-				local++
-			}
-		}
-		found.Add(int64(local))
-		log.Printf("[worker %d] chunk %d — %d numbers, %d primes", id, chunk.ID, len(chunk.Values), local)
-	}
-	log.Printf("[worker %d] done", id)
-}
-
-// Run executes the full pipeline and returns a Stats summary.
-//
-//	afsAddrs   — comma-separated AFS server addresses (primary first)
-//	cacheDir   — local directory used as AFS cache
-//	inputFiles — filenames on AFS to read numbers from
-//	outputFile — filename on AFS to write sorted unique primes
-//	numWorkers — parallel goroutine workers (0 → use NumWorkers default)
-//	isPrime    — primality function injected by caller
 func Run(
 	afsAddrs string,
 	cacheDir string,
@@ -90,7 +50,7 @@ func Run(
 	}
 	log.Printf("[coordinator] AFS ready")
 
-	jobs := make(chan WorkChunk, numWorkers*4)
+	jobs := make(chan worker.WorkChunk, numWorkers*4)
 	results := make(chan uint64, numWorkers*1000)
 
 	var wg sync.WaitGroup
@@ -99,7 +59,7 @@ func Run(
 	log.Printf("[coordinator] starting %d workers", numWorkers)
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
-		go worker(i, jobs, results, &wg, &totalFound, isPrime)
+		go worker.Run(i, jobs, results, &wg, &totalFound, isPrime)
 	}
 	go func() {
 		wg.Wait()
@@ -148,13 +108,13 @@ func Run(
 			totalNumbers++
 
 			if len(current) >= chunkSize {
-				jobs <- WorkChunk{ID: chunkID, Values: current}
+				jobs <- worker.WorkChunk{ID: chunkID, Values: current}
 				chunkID++
 				current = nil
 			}
 		}
 		if len(current) > 0 {
-			jobs <- WorkChunk{ID: chunkID, Values: current}
+			jobs <- worker.WorkChunk{ID: chunkID, Values: current}
 			chunkID++
 		}
 		log.Printf("[coordinator] %s done — running total %d numbers", filename, totalNumbers)

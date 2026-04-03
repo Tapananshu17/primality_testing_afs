@@ -39,3 +39,8 @@ Scenario 5: Server crash during read (Mid-operation Failover)
 * **Action:** The test uploads a 100MB file and begins a continuous download loop. You will be prompted to manually kill the Primary server (`Ctrl+C` on Terminal 1) right in the middle of a read operation.
 * **Expected Outcome:** The client's active download temporarily stalls as the connection drops. The backups detect the primary's timeout and elect a new primary. Within ~4-5 seconds, the client automatically catches the disconnect, queries the new primary, and finishes the read without crashing or corrupting data.
 * **Expected Log:** `OK: Failover triggered and handled mid-read. Took 4.67s`
+
+# coordinator worker
+cd primality_testing_afs
+rm -rf /tmp/prime_cache
+go run ./coordinator_worker/

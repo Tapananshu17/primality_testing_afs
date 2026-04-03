@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	coordinator "primality_afs/coordinator_worker/coordinator"
+	"primality_afs/coordinator_worker/primality"
 )
 
 func main() {
@@ -77,7 +78,7 @@ func main() {
 		inputFiles,
 		*outputFlag,
 		*workersFlag,
-		IsPrime,
+		primality.IsPrime,
 	)
 	if err != nil {
 		log.Fatalf("ERROR: coordinator failed: %v", err)
