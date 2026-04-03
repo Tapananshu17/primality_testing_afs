@@ -21,7 +21,6 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// ─── Client-facing messages (unchanged) ──────────────────────────────────────
 type TestAuthRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Filename      string                 `protobuf:"bytes,1,opt,name=filename,proto3" json:"filename,omitempty"`
@@ -326,7 +325,6 @@ func (x *StoreResponse) GetNewVersion() int32 {
 	return 0
 }
 
-// ─── New messages ─────────────────────────────────────────────────────────────
 type Empty struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -365,7 +363,7 @@ func (*Empty) Descriptor() ([]byte, []int) {
 
 type PrimaryInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Address       string                 `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"` // e.g. "localhost:50051"
+	Address       string                 `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
 	IsPrimary     bool                   `protobuf:"varint,2,opt,name=is_primary,json=isPrimary,proto3" json:"is_primary,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -415,12 +413,11 @@ func (x *PrimaryInfo) GetIsPrimary() bool {
 	return false
 }
 
-// ReplicateChunk mirrors StoreChunk but also carries the authoritative version.
 type ReplicateChunk struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Filename      string                 `protobuf:"bytes,1,opt,name=filename,proto3" json:"filename,omitempty"`
 	Content       []byte                 `protobuf:"bytes,2,opt,name=content,proto3" json:"content,omitempty"`
-	Version       int32                  `protobuf:"varint,3,opt,name=version,proto3" json:"version,omitempty"` // set only in the first chunk
+	Version       int32                  `protobuf:"varint,3,opt,name=version,proto3" json:"version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }

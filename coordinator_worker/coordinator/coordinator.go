@@ -3,6 +3,7 @@ package coordinator
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -10,14 +11,13 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"primality_afs/client"
-	"primality_afs/coordinator_worker/worker"
+	"primality_afs/prime_proto"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
-
-const NumWorkers = 5
 
 const chunkSize = 10000
 
@@ -34,13 +34,8 @@ func Run(
 	cacheDir string,
 	inputFiles []string,
 	outputFile string,
-	numWorkers int,
-	isPrime func(uint64) bool,
+	workerAddrs []string,
 ) (Stats, error) {
-
-	if numWorkers <= 0 {
-		numWorkers = NumWorkers
-	}
 	startTime := time.Now()
 
 	log.Printf("[coordinator] connecting to AFS: %s", afsAddrs)
@@ -50,17 +45,51 @@ func Run(
 	}
 	log.Printf("[coordinator] AFS ready")
 
-	jobs := make(chan worker.WorkChunk, numWorkers*4)
-	results := make(chan uint64, numWorkers*1000)
+	// Connect to gRPC Workers
+	var conns []*grpc.ClientConn
+	var grpcClients []primepb.PrimeWorkerClient
 
-	var wg sync.WaitGroup
-	var totalFound atomic.Int64
-
-	log.Printf("[coordinator] starting %d workers", numWorkers)
-	for i := 0; i < numWorkers; i++ {
-		wg.Add(1)
-		go worker.Run(i, jobs, results, &wg, &totalFound, isPrime)
+	for _, addr := range workerAddrs {
+		conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			log.Printf("[coordinator] WARNING: failed to connect to worker %s: %v", addr, err)
+			continue
+		}
+		conns = append(conns, conn)
+		grpcClients = append(grpcClients, primepb.NewPrimeWorkerClient(conn))
 	}
+	defer func() {
+		for _, conn := range conns {
+			conn.Close()
+		}
+	}()
+
+	numWorkers := len(grpcClients)
+	if numWorkers == 0 {
+		return Stats{}, fmt.Errorf("no workers available")
+	}
+
+	jobs := make(chan *primepb.WorkChunk, numWorkers*4)
+	results := make(chan []uint64, numWorkers*1000)
+	var wg sync.WaitGroup
+
+	log.Printf("[coordinator] starting %d proxy clients for gRPC workers", numWorkers)
+	for i, c := range grpcClients {
+		wg.Add(1)
+		go func(workerClient primepb.PrimeWorkerClient, id int) {
+			defer wg.Done()
+			for chunk := range jobs {
+				resp, err := workerClient.ProcessChunk(context.Background(), chunk)
+				if err != nil {
+					log.Printf("[coordinator] RPC error on worker %d: %v", id, err)
+					continue
+				}
+				results <- resp.Primes
+			}
+		}(c, i)
+	}
+
+	// Wait and close results channel when all proxies are done
 	go func() {
 		wg.Wait()
 		close(results)
@@ -69,6 +98,7 @@ func Run(
 	totalNumbers := 0
 	chunkID := 0
 
+	// Read from AFS and stream to the jobs channel
 	for _, filename := range inputFiles {
 		log.Printf("[coordinator] fetching: %s", filename)
 
@@ -96,36 +126,37 @@ func Run(
 
 		for scanner.Scan() {
 			line := strings.TrimSpace(scanner.Text())
-			if line == "" {
-				continue
-			}
+			if line == "" { continue }
+			
 			n, parseErr := strconv.ParseUint(line, 10, 64)
 			if parseErr != nil {
-				log.Printf("[coordinator] bad line %q in %s — skipping", line, filename)
 				continue
 			}
 			current = append(current, n)
 			totalNumbers++
 
 			if len(current) >= chunkSize {
-				jobs <- worker.WorkChunk{ID: chunkID, Values: current}
+				jobs <- &primepb.WorkChunk{Id: int32(chunkID), Values: current}
 				chunkID++
 				current = nil
 			}
 		}
 		if len(current) > 0 {
-			jobs <- worker.WorkChunk{ID: chunkID, Values: current}
+			jobs <- &primepb.WorkChunk{Id: int32(chunkID), Values: current}
 			chunkID++
 		}
-		log.Printf("[coordinator] %s done — running total %d numbers", filename, totalNumbers)
+		log.Printf("[coordinator] %s done", filename)
 	}
 
 	close(jobs)
 	log.Printf("[coordinator] all input dispatched — %d numbers, %d chunks", totalNumbers, chunkID)
 
+	// Collect unique primes
 	primeSet := make(map[uint64]struct{})
-	for p := range results {
-		primeSet[p] = struct{}{}
+	for primesBatch := range results {
+		for _, p := range primesBatch {
+			primeSet[p] = struct{}{}
+		}
 	}
 
 	uniquePrimes := make([]uint64, 0, len(primeSet))
@@ -134,8 +165,7 @@ func Run(
 	}
 	sort.Slice(uniquePrimes, func(i, j int) bool { return uniquePrimes[i] < uniquePrimes[j] })
 
-	log.Printf("[coordinator] %d unique primes from %d numbers", len(uniquePrimes), totalNumbers)
-
+	// Write Output to AFS
 	var out bytes.Buffer
 	for _, p := range uniquePrimes {
 		fmt.Fprintf(&out, "%d\n", p)
@@ -149,10 +179,8 @@ func Run(
 		afsClient.AFS_Close(fd)
 		return Stats{}, fmt.Errorf("write %s: %w", outputFile, err)
 	}
-	if err := afsClient.AFS_Close(fd); err != nil {
-		return Stats{}, fmt.Errorf("upload %s: %w", outputFile, err)
-	}
-	log.Printf("[coordinator] saved '%s' (%d bytes) to AFS", outputFile, out.Len())
+	afsClient.AFS_Close(fd)
+	log.Printf("[coordinator] saved '%s' to AFS", outputFile)
 
 	return Stats{
 		InputFiles:   len(inputFiles),

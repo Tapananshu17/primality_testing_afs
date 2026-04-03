@@ -28,13 +28,10 @@ const (
 // AFSClient is the client API for AFS service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-//
-// ── Client-facing service (unchanged API) ────────────────────────────────────
 type AFSClient interface {
 	TestAuth(ctx context.Context, in *TestAuthRequest, opts ...grpc.CallOption) (*TestAuthResponse, error)
 	FetchFile(ctx context.Context, in *FileRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[FileChunk], error)
 	StoreFile(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[StoreChunk, StoreResponse], error)
-	// Clients call this to discover who the current primary is.
 	GetPrimary(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*PrimaryInfo, error)
 }
 
@@ -101,13 +98,10 @@ func (c *aFSClient) GetPrimary(ctx context.Context, in *Empty, opts ...grpc.Call
 // AFSServer is the server API for AFS service.
 // All implementations must embed UnimplementedAFSServer
 // for forward compatibility.
-//
-// ── Client-facing service (unchanged API) ────────────────────────────────────
 type AFSServer interface {
 	TestAuth(context.Context, *TestAuthRequest) (*TestAuthResponse, error)
 	FetchFile(*FileRequest, grpc.ServerStreamingServer[FileChunk]) error
 	StoreFile(grpc.ClientStreamingServer[StoreChunk, StoreResponse]) error
-	// Clients call this to discover who the current primary is.
 	GetPrimary(context.Context, *Empty) (*PrimaryInfo, error)
 	mustEmbedUnimplementedAFSServer()
 }
@@ -245,12 +239,8 @@ const (
 // ReplicaClient is the client API for Replica service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-//
-// ── Internal replication service (primary → backups only) ────────────────────
 type ReplicaClient interface {
-	// Primary streams the full file content to a backup after a write.
 	ReplicateFile(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[ReplicateChunk, ReplicateResponse], error)
-	// Primary sends periodic heartbeats so backups know it is alive.
 	Heartbeat(ctx context.Context, in *HeartbeatRequest, opts ...grpc.CallOption) (*HeartbeatResponse, error)
 }
 
@@ -288,12 +278,8 @@ func (c *replicaClient) Heartbeat(ctx context.Context, in *HeartbeatRequest, opt
 // ReplicaServer is the server API for Replica service.
 // All implementations must embed UnimplementedReplicaServer
 // for forward compatibility.
-//
-// ── Internal replication service (primary → backups only) ────────────────────
 type ReplicaServer interface {
-	// Primary streams the full file content to a backup after a write.
 	ReplicateFile(grpc.ClientStreamingServer[ReplicateChunk, ReplicateResponse]) error
-	// Primary sends periodic heartbeats so backups know it is alive.
 	Heartbeat(context.Context, *HeartbeatRequest) (*HeartbeatResponse, error)
 	mustEmbedUnimplementedReplicaServer()
 }

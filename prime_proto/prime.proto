@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package primepb;
+
+// Adjust the go_package to match your module structure
+option go_package = "primality_afs/primepb";
+
+message WorkChunk {
+    int32 id = 1;
+    repeated uint64 values = 2;
+}
+
+message PrimeResult {
+    int32 chunk_id = 1;
+    repeated uint64 primes = 2;
+}
+
+service PrimeWorker {
+    // The Coordinator sends a WorkChunk, the Worker processes it and returns a PrimeResult.
+    rpc ProcessChunk (WorkChunk) returns (PrimeResult);
+}

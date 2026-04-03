@@ -1,5 +1,3 @@
-// coordinator_worker/main.go
-
 package main
 
 import (
@@ -9,89 +7,78 @@ import (
 	"os"
 	"strings"
 
-	coordinator "primality_afs/coordinator_worker/coordinator"
-	"primality_afs/coordinator_worker/primality"
+	"primality_afs/coordinator"
+	"primality_afs/primality"
+	"primality_afs/worker"
 )
 
 func main() {
-	// Flags
-	afsFlag := flag.String(
-		"afs",
-		"localhost:50051,localhost:50052,localhost:50053",
-		"comma-separated AFS server addresses (primary listed first)",
-	)
+	// Determines which mode the application runs in
+	modeFlag := flag.String("mode", "coordinator", "Run mode: 'coordinator' or 'worker'")
 
-	inputsFlag := flag.String(
-		"inputs",
-		"input_dataset_001.txt,input_dataset_002.txt",
-		"comma-separated input filenames on AFS",
-	)
+	// --- Coordinator Flags ---
+	afsFlag := flag.String("afs", "localhost:50051,localhost:50052,localhost:50053", "comma-separated AFS server addresses")
+	inputsFlag := flag.String("inputs", "input_dataset_001.txt,input_dataset_002.txt", "comma-separated input filenames on AFS")
+	outputFlag := flag.String("output", "primes.txt", "output filename on AFS")
+	cacheFlag := flag.String("cache", "/tmp/prime_cache", "local cache directory for AFS client")
+	workerAddrsFlag := flag.String("workers", "localhost:6001,localhost:6002", "comma-separated gRPC worker addresses")
 
-	outputFlag := flag.String(
-		"output",
-		"primes.txt",
-		"output filename on AFS for the unique sorted primes",
-	)
-
-	cacheFlag := flag.String(
-		"cache",
-		"/tmp/prime_cache",
-		"local cache directory for AFS client",
-	)
-
-	workersFlag := flag.Int(
-		"workers",
-		coordinator.NumWorkers,
-		"number of parallel primality-testing goroutines",
-	)
+	// --- Worker Flags ---
+	workerPortFlag := flag.String("port", ":6001", "port for the gRPC worker to listen on (e.g. :6001)")
+	workerIdFlag := flag.Int("id", 1, "worker ID for logging")
 
 	flag.Parse()
 
-	//Validate Inputs
-	inputFiles := parseInputFiles(*inputsFlag)
-	if len(inputFiles) == 0 {
-		log.Fatal("ERROR: --inputs must contain at least one valid filename")
+	if *modeFlag == "worker" {
+		fmt.Printf("Starting gRPC Worker %d on port %s...\n", *workerIdFlag, *workerPortFlag)
+		if err := worker.StartGRPCServer(*workerPortFlag, *workerIdFlag, primality.IsPrime); err != nil {
+			log.Fatalf("Worker failed: %v", err)
+		}
+		return
 	}
 
-	if *workersFlag < 1 {
-		log.Fatal("ERROR: --workers must be >= 1")
-	}
+	if *modeFlag == "coordinator" {
+		inputFiles := parseInputFiles(*inputsFlag)
+		workerAddrs := parseInputFiles(*workerAddrsFlag)
 
-	if err := os.RemoveAll(*cacheFlag); err != nil {
-		log.Fatalf("ERROR: failed to clear cache directory: %v", err)
-	}
-	if err := os.MkdirAll(*cacheFlag, 0755); err != nil {
-		log.Fatalf("ERROR: failed to create cache directory: %v", err)
-	}
+		if len(inputFiles) == 0 {
+			log.Fatal("ERROR: --inputs must contain at least one valid filename")
+		}
+		if len(workerAddrs) == 0 {
+			log.Fatal("ERROR: --workers must contain at least one worker address")
+		}
 
-	fmt.Println("   Distributed Prime Finder  ")
-	fmt.Println("   Coordinator-Worker Model")
-	fmt.Printf("AFS servers  : %s\n", *afsFlag)
-	fmt.Printf("Input files  : %v\n", inputFiles)
-	fmt.Printf("Output file  : %s\n", *outputFlag)
-	fmt.Printf("Workers      : %d\n", *workersFlag)
-	fmt.Println()
+		if err := os.RemoveAll(*cacheFlag); err != nil {
+			log.Fatalf("ERROR: failed to clear cache directory: %v", err)
+		}
+		if err := os.MkdirAll(*cacheFlag, 0755); err != nil {
+			log.Fatalf("ERROR: failed to create cache directory: %v", err)
+		}
 
-	stats, err := coordinator.Run(
-		*afsFlag,
-		*cacheFlag,
-		inputFiles,
-		*outputFlag,
-		*workersFlag,
-		primality.IsPrime,
-	)
-	if err != nil {
-		log.Fatalf("ERROR: coordinator failed: %v", err)
+		fmt.Println("   Distributed Prime Finder (gRPC)  ")
+		fmt.Println("   Coordinator Node")
+		fmt.Printf("Worker Addrs : %v\n", workerAddrs)
+
+		stats, err := coordinator.Run(
+			*afsFlag,
+			*cacheFlag,
+			inputFiles,
+			*outputFlag,
+			workerAddrs,
+		)
+		if err != nil {
+			log.Fatalf("ERROR: coordinator failed: %v", err)
+		}
+
+		fmt.Println("   Results")
+		fmt.Printf("Input files processed  : %d\n", stats.InputFiles)
+		fmt.Printf("Total numbers checked  : %d\n", stats.TotalNumbers)
+		fmt.Printf("Unique primes found    : %d\n", stats.PrimesFound)
+		fmt.Printf("Workers used           : %d\n", stats.Workers)
+		fmt.Printf("Time taken             : %s\n", stats.Duration.Round(1_000_000))
+	} else {
+		log.Fatalf("Unknown mode: %s. Use 'coordinator' or 'worker'", *modeFlag)
 	}
-
-	fmt.Println("   Results")
-	fmt.Printf("Input files processed  : %d\n", stats.InputFiles)
-	fmt.Printf("Total numbers checked  : %d\n", stats.TotalNumbers)
-	fmt.Printf("Unique primes found    : %d\n", stats.PrimesFound)
-	fmt.Printf("Workers used           : %d\n", stats.Workers)
-	fmt.Printf("Time taken             : %s\n", stats.Duration.Round(1_000_000))
-	fmt.Printf("Output saved to AFS    : %s\n", *outputFlag)
-	fmt.Println("DONE.")
 }
 
 func parseInputFiles(input string) []string {

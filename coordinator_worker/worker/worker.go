@@ -1,38 +1,54 @@
-// coordinator_worker/worker/worker.go
-//
-// Worker logic for the distributed prime finder.
-// Each worker reads WorkChunks from the jobs channel, tests each number
-// for primality using the injected isPrime function, and sends primes to
-// the results channel.
-
 package worker
 
 import (
+	"context"
 	"log"
-	"sync"
-	"sync/atomic"
+	"net"
+
+	"primality_afs/prime_proto"
+	"google.golang.org/grpc"
 )
 
-// WorkChunk is one unit of work passed from coordinator → worker.
-type WorkChunk struct {
-	ID     int
-	Values []uint64
+// Server implements the primepb.PrimeWorkerServer interface.
+type Server struct {
+	primepb.UnimplementedPrimeWorkerServer
+	IsPrime func(uint64) bool
+	WorkerID int
 }
 
-// Run reads chunks from jobs, tests each number, sends primes to results.
-// isPrime is injected so this package has zero dependency on primality logic.
-func Run(id int, jobs <-chan WorkChunk, results chan<- uint64, wg *sync.WaitGroup, found *atomic.Int64, isPrime func(uint64) bool) {
-	defer wg.Done()
-	for chunk := range jobs {
-		local := 0
-		for _, n := range chunk.Values {
-			if isPrime(n) {
-				results <- n
-				local++
-			}
+// ProcessChunk handles an incoming gRPC request containing a chunk of numbers.
+func (s *Server) ProcessChunk(ctx context.Context, req *primepb.WorkChunk) (*primepb.PrimeResult, error) {
+	var primes []uint64
+
+	for _, n := range req.Values {
+		if s.IsPrime(n) {
+			primes = append(primes, n)
 		}
-		found.Add(int64(local))
-		log.Printf("[worker %d] chunk %d — %d numbers, %d primes", id, chunk.ID, len(chunk.Values), local)
 	}
-	log.Printf("[worker %d] done", id)
+
+	log.Printf("[worker %d] processed chunk %d — %d numbers, %d primes", s.WorkerID, req.Id, len(req.Values), len(primes))
+
+	return &primepb.PrimeResult{
+		ChunkId: req.Id,
+		Primes:  primes,
+	}, nil
+}
+
+// StartGRPCServer starts listening for requests from the Coordinator.
+func StartGRPCServer(addr string, workerID int, isPrime func(uint64) bool) error {
+	lis, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+
+	grpcServer := grpc.NewServer()
+	srv := &Server{
+		IsPrime:  isPrime,
+		WorkerID: workerID,
+	}
+	
+	primepb.RegisterPrimeWorkerServer(grpcServer, srv)
+	
+	log.Printf("[worker %d] listening on %s", workerID, addr)
+	return grpcServer.Serve(lis)
 }
