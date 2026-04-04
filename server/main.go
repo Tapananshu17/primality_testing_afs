@@ -138,7 +138,7 @@ func (s *primaryServer) runHeartbeats() {
 
 func (s *primaryServer) filePath(filename string) string {
 	base := filepath.Base(filename)
-	if base == "primes.txt" {
+	if base == "primes.txt" || strings.HasSuffix(base, ".json") {
 		return filepath.Join(s.outputDir, base)
 	}
 	return filepath.Join(s.inputDir, base)

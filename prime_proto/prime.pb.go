@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        v3.21.12
-// source: proto/prime.proto
+// source: prime_proto/prime.proto
 
 package primepb
 
@@ -25,13 +25,14 @@ type WorkChunk struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            int32                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
 	Values        []uint64               `protobuf:"varint,2,rep,packed,name=values,proto3" json:"values,omitempty"`
+	StartOffset   int32                  `protobuf:"varint,3,opt,name=start_offset,json=startOffset,proto3" json:"start_offset,omitempty"` // FIX #3: Added offset for worker recovery
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *WorkChunk) Reset() {
 	*x = WorkChunk{}
-	mi := &file_proto_prime_proto_msgTypes[0]
+	mi := &file_prime_proto_prime_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -43,7 +44,7 @@ func (x *WorkChunk) String() string {
 func (*WorkChunk) ProtoMessage() {}
 
 func (x *WorkChunk) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_prime_proto_msgTypes[0]
+	mi := &file_prime_proto_prime_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -56,7 +57,7 @@ func (x *WorkChunk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkChunk.ProtoReflect.Descriptor instead.
 func (*WorkChunk) Descriptor() ([]byte, []int) {
-	return file_proto_prime_proto_rawDescGZIP(), []int{0}
+	return file_prime_proto_prime_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *WorkChunk) GetId() int32 {
@@ -73,6 +74,13 @@ func (x *WorkChunk) GetValues() []uint64 {
 	return nil
 }
 
+func (x *WorkChunk) GetStartOffset() int32 {
+	if x != nil {
+		return x.StartOffset
+	}
+	return 0
+}
+
 type PrimeResult struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ChunkId       int32                  `protobuf:"varint,1,opt,name=chunk_id,json=chunkId,proto3" json:"chunk_id,omitempty"`
@@ -83,7 +91,7 @@ type PrimeResult struct {
 
 func (x *PrimeResult) Reset() {
 	*x = PrimeResult{}
-	mi := &file_proto_prime_proto_msgTypes[1]
+	mi := &file_prime_proto_prime_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -95,7 +103,7 @@ func (x *PrimeResult) String() string {
 func (*PrimeResult) ProtoMessage() {}
 
 func (x *PrimeResult) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_prime_proto_msgTypes[1]
+	mi := &file_prime_proto_prime_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -108,7 +116,7 @@ func (x *PrimeResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrimeResult.ProtoReflect.Descriptor instead.
 func (*PrimeResult) Descriptor() ([]byte, []int) {
-	return file_proto_prime_proto_rawDescGZIP(), []int{1}
+	return file_prime_proto_prime_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *PrimeResult) GetChunkId() int32 {
@@ -125,67 +133,174 @@ func (x *PrimeResult) GetPrimes() []uint64 {
 	return nil
 }
 
-var File_proto_prime_proto protoreflect.FileDescriptor
+type SnapshotRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Marker        string                 `protobuf:"bytes,1,opt,name=marker,proto3" json:"marker,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
 
-const file_proto_prime_proto_rawDesc = "" +
+func (x *SnapshotRequest) Reset() {
+	*x = SnapshotRequest{}
+	mi := &file_prime_proto_prime_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SnapshotRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SnapshotRequest) ProtoMessage() {}
+
+func (x *SnapshotRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_prime_proto_prime_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SnapshotRequest.ProtoReflect.Descriptor instead.
+func (*SnapshotRequest) Descriptor() ([]byte, []int) {
+	return file_prime_proto_prime_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *SnapshotRequest) GetMarker() string {
+	if x != nil {
+		return x.Marker
+	}
+	return ""
+}
+
+type SnapshotResponse struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	CurrentChunkId int32                  `protobuf:"varint,1,opt,name=current_chunk_id,json=currentChunkId,proto3" json:"current_chunk_id,omitempty"`
+	Offset         int32                  `protobuf:"varint,2,opt,name=offset,proto3" json:"offset,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *SnapshotResponse) Reset() {
+	*x = SnapshotResponse{}
+	mi := &file_prime_proto_prime_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SnapshotResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SnapshotResponse) ProtoMessage() {}
+
+func (x *SnapshotResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_prime_proto_prime_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SnapshotResponse.ProtoReflect.Descriptor instead.
+func (*SnapshotResponse) Descriptor() ([]byte, []int) {
+	return file_prime_proto_prime_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *SnapshotResponse) GetCurrentChunkId() int32 {
+	if x != nil {
+		return x.CurrentChunkId
+	}
+	return 0
+}
+
+func (x *SnapshotResponse) GetOffset() int32 {
+	if x != nil {
+		return x.Offset
+	}
+	return 0
+}
+
+var File_prime_proto_prime_proto protoreflect.FileDescriptor
+
+const file_prime_proto_prime_proto_rawDesc = "" +
 	"\n" +
-	"\x11proto/prime.proto\x12\aprimepb\"3\n" +
+	"\x17prime_proto/prime.proto\x12\aprimepb\"V\n" +
 	"\tWorkChunk\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x05R\x02id\x12\x16\n" +
-	"\x06values\x18\x02 \x03(\x04R\x06values\"@\n" +
+	"\x06values\x18\x02 \x03(\x04R\x06values\x12!\n" +
+	"\fstart_offset\x18\x03 \x01(\x05R\vstartOffset\"@\n" +
 	"\vPrimeResult\x12\x19\n" +
 	"\bchunk_id\x18\x01 \x01(\x05R\achunkId\x12\x16\n" +
-	"\x06primes\x18\x02 \x03(\x04R\x06primes2G\n" +
+	"\x06primes\x18\x02 \x03(\x04R\x06primes\")\n" +
+	"\x0fSnapshotRequest\x12\x16\n" +
+	"\x06marker\x18\x01 \x01(\tR\x06marker\"T\n" +
+	"\x10SnapshotResponse\x12(\n" +
+	"\x10current_chunk_id\x18\x01 \x01(\x05R\x0ecurrentChunkId\x12\x16\n" +
+	"\x06offset\x18\x02 \x01(\x05R\x06offset2\x8c\x01\n" +
 	"\vPrimeWorker\x128\n" +
-	"\fProcessChunk\x12\x12.primepb.WorkChunk\x1a\x14.primepb.PrimeResultB\x17Z\x15primality_afs/primepbb\x06proto3"
+	"\fProcessChunk\x12\x12.primepb.WorkChunk\x1a\x14.primepb.PrimeResult\x12C\n" +
+	"\fCaptureState\x12\x18.primepb.SnapshotRequest\x1a\x19.primepb.SnapshotResponseB#Z!primality_afs/prime_proto;primepbb\x06proto3"
 
 var (
-	file_proto_prime_proto_rawDescOnce sync.Once
-	file_proto_prime_proto_rawDescData []byte
+	file_prime_proto_prime_proto_rawDescOnce sync.Once
+	file_prime_proto_prime_proto_rawDescData []byte
 )
 
-func file_proto_prime_proto_rawDescGZIP() []byte {
-	file_proto_prime_proto_rawDescOnce.Do(func() {
-		file_proto_prime_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_proto_prime_proto_rawDesc), len(file_proto_prime_proto_rawDesc)))
+func file_prime_proto_prime_proto_rawDescGZIP() []byte {
+	file_prime_proto_prime_proto_rawDescOnce.Do(func() {
+		file_prime_proto_prime_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_prime_proto_prime_proto_rawDesc), len(file_prime_proto_prime_proto_rawDesc)))
 	})
-	return file_proto_prime_proto_rawDescData
+	return file_prime_proto_prime_proto_rawDescData
 }
 
-var file_proto_prime_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
-var file_proto_prime_proto_goTypes = []any{
-	(*WorkChunk)(nil),   // 0: primepb.WorkChunk
-	(*PrimeResult)(nil), // 1: primepb.PrimeResult
+var file_prime_proto_prime_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_prime_proto_prime_proto_goTypes = []any{
+	(*WorkChunk)(nil),        // 0: primepb.WorkChunk
+	(*PrimeResult)(nil),      // 1: primepb.PrimeResult
+	(*SnapshotRequest)(nil),  // 2: primepb.SnapshotRequest
+	(*SnapshotResponse)(nil), // 3: primepb.SnapshotResponse
 }
-var file_proto_prime_proto_depIdxs = []int32{
+var file_prime_proto_prime_proto_depIdxs = []int32{
 	0, // 0: primepb.PrimeWorker.ProcessChunk:input_type -> primepb.WorkChunk
-	1, // 1: primepb.PrimeWorker.ProcessChunk:output_type -> primepb.PrimeResult
-	1, // [1:2] is the sub-list for method output_type
-	0, // [0:1] is the sub-list for method input_type
+	2, // 1: primepb.PrimeWorker.CaptureState:input_type -> primepb.SnapshotRequest
+	1, // 2: primepb.PrimeWorker.ProcessChunk:output_type -> primepb.PrimeResult
+	3, // 3: primepb.PrimeWorker.CaptureState:output_type -> primepb.SnapshotResponse
+	2, // [2:4] is the sub-list for method output_type
+	0, // [0:2] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
 }
 
-func init() { file_proto_prime_proto_init() }
-func file_proto_prime_proto_init() {
-	if File_proto_prime_proto != nil {
+func init() { file_prime_proto_prime_proto_init() }
+func file_prime_proto_prime_proto_init() {
+	if File_prime_proto_prime_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_prime_proto_rawDesc), len(file_proto_prime_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_prime_proto_prime_proto_rawDesc), len(file_prime_proto_prime_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_proto_prime_proto_goTypes,
-		DependencyIndexes: file_proto_prime_proto_depIdxs,
-		MessageInfos:      file_proto_prime_proto_msgTypes,
+		GoTypes:           file_prime_proto_prime_proto_goTypes,
+		DependencyIndexes: file_prime_proto_prime_proto_depIdxs,
+		MessageInfos:      file_prime_proto_prime_proto_msgTypes,
 	}.Build()
-	File_proto_prime_proto = out.File
-	file_proto_prime_proto_goTypes = nil
-	file_proto_prime_proto_depIdxs = nil
+	File_prime_proto_prime_proto = out.File
+	file_prime_proto_prime_proto_goTypes = nil
+	file_prime_proto_prime_proto_depIdxs = nil
 }

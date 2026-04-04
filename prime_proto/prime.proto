@@ -2,12 +2,12 @@ syntax = "proto3";
 
 package primepb;
 
-// Adjust the go_package to match your module structure
-option go_package = "primality_afs/primepb";
+option go_package = "primality_afs/prime_proto;primepb";
 
 message WorkChunk {
     int32 id = 1;
     repeated uint64 values = 2;
+    int32 start_offset = 3;  // FIX #3: Added offset for worker recovery
 }
 
 message PrimeResult {
@@ -15,7 +15,16 @@ message PrimeResult {
     repeated uint64 primes = 2;
 }
 
+message SnapshotRequest {
+    string marker = 1;
+}
+
+message SnapshotResponse {
+    int32 current_chunk_id = 1;
+    int32 offset = 2;
+}
+
 service PrimeWorker {
-    // The Coordinator sends a WorkChunk, the Worker processes it and returns a PrimeResult.
     rpc ProcessChunk (WorkChunk) returns (PrimeResult);
+    rpc CaptureState (SnapshotRequest) returns (SnapshotResponse);
 }
