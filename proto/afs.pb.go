@@ -2,9 +2,9 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        v3.21.12
-// source: proto/afs.proto
+// source: afs.proto
 
-package pb
+package proto
 
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
@@ -31,7 +31,7 @@ type TestAuthRequest struct {
 
 func (x *TestAuthRequest) Reset() {
 	*x = TestAuthRequest{}
-	mi := &file_proto_afs_proto_msgTypes[0]
+	mi := &file_afs_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -43,7 +43,7 @@ func (x *TestAuthRequest) String() string {
 func (*TestAuthRequest) ProtoMessage() {}
 
 func (x *TestAuthRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_afs_proto_msgTypes[0]
+	mi := &file_afs_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -56,7 +56,7 @@ func (x *TestAuthRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TestAuthRequest.ProtoReflect.Descriptor instead.
 func (*TestAuthRequest) Descriptor() ([]byte, []int) {
-	return file_proto_afs_proto_rawDescGZIP(), []int{0}
+	return file_afs_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *TestAuthRequest) GetFilename() string {
@@ -83,7 +83,7 @@ type TestAuthResponse struct {
 
 func (x *TestAuthResponse) Reset() {
 	*x = TestAuthResponse{}
-	mi := &file_proto_afs_proto_msgTypes[1]
+	mi := &file_afs_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -95,7 +95,7 @@ func (x *TestAuthResponse) String() string {
 func (*TestAuthResponse) ProtoMessage() {}
 
 func (x *TestAuthResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_afs_proto_msgTypes[1]
+	mi := &file_afs_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -108,7 +108,7 @@ func (x *TestAuthResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TestAuthResponse.ProtoReflect.Descriptor instead.
 func (*TestAuthResponse) Descriptor() ([]byte, []int) {
-	return file_proto_afs_proto_rawDescGZIP(), []int{1}
+	return file_afs_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *TestAuthResponse) GetIsValid() bool {
@@ -134,7 +134,7 @@ type FileRequest struct {
 
 func (x *FileRequest) Reset() {
 	*x = FileRequest{}
-	mi := &file_proto_afs_proto_msgTypes[2]
+	mi := &file_afs_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -146,7 +146,7 @@ func (x *FileRequest) String() string {
 func (*FileRequest) ProtoMessage() {}
 
 func (x *FileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_afs_proto_msgTypes[2]
+	mi := &file_afs_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -159,7 +159,7 @@ func (x *FileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileRequest.ProtoReflect.Descriptor instead.
 func (*FileRequest) Descriptor() ([]byte, []int) {
-	return file_proto_afs_proto_rawDescGZIP(), []int{2}
+	return file_afs_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *FileRequest) GetFilename() string {
@@ -179,7 +179,7 @@ type FileChunk struct {
 
 func (x *FileChunk) Reset() {
 	*x = FileChunk{}
-	mi := &file_proto_afs_proto_msgTypes[3]
+	mi := &file_afs_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -191,7 +191,7 @@ func (x *FileChunk) String() string {
 func (*FileChunk) ProtoMessage() {}
 
 func (x *FileChunk) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_afs_proto_msgTypes[3]
+	mi := &file_afs_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -204,7 +204,7 @@ func (x *FileChunk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileChunk.ProtoReflect.Descriptor instead.
 func (*FileChunk) Descriptor() ([]byte, []int) {
-	return file_proto_afs_proto_rawDescGZIP(), []int{3}
+	return file_afs_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *FileChunk) GetContent() []byte {
@@ -231,7 +231,7 @@ type StoreChunk struct {
 
 func (x *StoreChunk) Reset() {
 	*x = StoreChunk{}
-	mi := &file_proto_afs_proto_msgTypes[4]
+	mi := &file_afs_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -243,7 +243,7 @@ func (x *StoreChunk) String() string {
 func (*StoreChunk) ProtoMessage() {}
 
 func (x *StoreChunk) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_afs_proto_msgTypes[4]
+	mi := &file_afs_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -256,7 +256,7 @@ func (x *StoreChunk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StoreChunk.ProtoReflect.Descriptor instead.
 func (*StoreChunk) Descriptor() ([]byte, []int) {
-	return file_proto_afs_proto_rawDescGZIP(), []int{4}
+	return file_afs_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *StoreChunk) GetFilename() string {
@@ -283,7 +283,7 @@ type StoreResponse struct {
 
 func (x *StoreResponse) Reset() {
 	*x = StoreResponse{}
-	mi := &file_proto_afs_proto_msgTypes[5]
+	mi := &file_afs_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -295,7 +295,7 @@ func (x *StoreResponse) String() string {
 func (*StoreResponse) ProtoMessage() {}
 
 func (x *StoreResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_afs_proto_msgTypes[5]
+	mi := &file_afs_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -308,7 +308,7 @@ func (x *StoreResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StoreResponse.ProtoReflect.Descriptor instead.
 func (*StoreResponse) Descriptor() ([]byte, []int) {
-	return file_proto_afs_proto_rawDescGZIP(), []int{5}
+	return file_afs_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *StoreResponse) GetSuccess() bool {
@@ -333,7 +333,7 @@ type Empty struct {
 
 func (x *Empty) Reset() {
 	*x = Empty{}
-	mi := &file_proto_afs_proto_msgTypes[6]
+	mi := &file_afs_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -345,7 +345,7 @@ func (x *Empty) String() string {
 func (*Empty) ProtoMessage() {}
 
 func (x *Empty) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_afs_proto_msgTypes[6]
+	mi := &file_afs_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -358,7 +358,7 @@ func (x *Empty) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Empty.ProtoReflect.Descriptor instead.
 func (*Empty) Descriptor() ([]byte, []int) {
-	return file_proto_afs_proto_rawDescGZIP(), []int{6}
+	return file_afs_proto_rawDescGZIP(), []int{6}
 }
 
 type PrimaryInfo struct {
@@ -371,7 +371,7 @@ type PrimaryInfo struct {
 
 func (x *PrimaryInfo) Reset() {
 	*x = PrimaryInfo{}
-	mi := &file_proto_afs_proto_msgTypes[7]
+	mi := &file_afs_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -383,7 +383,7 @@ func (x *PrimaryInfo) String() string {
 func (*PrimaryInfo) ProtoMessage() {}
 
 func (x *PrimaryInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_afs_proto_msgTypes[7]
+	mi := &file_afs_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -396,7 +396,7 @@ func (x *PrimaryInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrimaryInfo.ProtoReflect.Descriptor instead.
 func (*PrimaryInfo) Descriptor() ([]byte, []int) {
-	return file_proto_afs_proto_rawDescGZIP(), []int{7}
+	return file_afs_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *PrimaryInfo) GetAddress() string {
@@ -413,30 +413,33 @@ func (x *PrimaryInfo) GetIsPrimary() bool {
 	return false
 }
 
-type ReplicateChunk struct {
+// A single Raft log entry — carries one file-write command.
+type LogEntry struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Filename      string                 `protobuf:"bytes,1,opt,name=filename,proto3" json:"filename,omitempty"`
-	Content       []byte                 `protobuf:"bytes,2,opt,name=content,proto3" json:"content,omitempty"`
-	Version       int32                  `protobuf:"varint,3,opt,name=version,proto3" json:"version,omitempty"`
+	Term          int64                  `protobuf:"varint,1,opt,name=term,proto3" json:"term,omitempty"`        // term when entry was received by leader
+	Index         int64                  `protobuf:"varint,2,opt,name=index,proto3" json:"index,omitempty"`      // 1-based position in the log
+	Filename      string                 `protobuf:"bytes,3,opt,name=filename,proto3" json:"filename,omitempty"` // file being written
+	Data          []byte                 `protobuf:"bytes,4,opt,name=data,proto3" json:"data,omitempty"`         // full file contents
+	Version       int32                  `protobuf:"varint,5,opt,name=version,proto3" json:"version,omitempty"`  // file version assigned by leader
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *ReplicateChunk) Reset() {
-	*x = ReplicateChunk{}
-	mi := &file_proto_afs_proto_msgTypes[8]
+func (x *LogEntry) Reset() {
+	*x = LogEntry{}
+	mi := &file_afs_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ReplicateChunk) String() string {
+func (x *LogEntry) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ReplicateChunk) ProtoMessage() {}
+func (*LogEntry) ProtoMessage() {}
 
-func (x *ReplicateChunk) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_afs_proto_msgTypes[8]
+func (x *LogEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_afs_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -447,158 +450,73 @@ func (x *ReplicateChunk) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ReplicateChunk.ProtoReflect.Descriptor instead.
-func (*ReplicateChunk) Descriptor() ([]byte, []int) {
-	return file_proto_afs_proto_rawDescGZIP(), []int{8}
+// Deprecated: Use LogEntry.ProtoReflect.Descriptor instead.
+func (*LogEntry) Descriptor() ([]byte, []int) {
+	return file_afs_proto_rawDescGZIP(), []int{8}
 }
 
-func (x *ReplicateChunk) GetFilename() string {
-	if x != nil {
-		return x.Filename
-	}
-	return ""
-}
-
-func (x *ReplicateChunk) GetContent() []byte {
-	if x != nil {
-		return x.Content
-	}
-	return nil
-}
-
-func (x *ReplicateChunk) GetVersion() int32 {
-	if x != nil {
-		return x.Version
-	}
-	return 0
-}
-
-type ReplicateResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
-	Version       int32                  `protobuf:"varint,2,opt,name=version,proto3" json:"version,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ReplicateResponse) Reset() {
-	*x = ReplicateResponse{}
-	mi := &file_proto_afs_proto_msgTypes[9]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ReplicateResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ReplicateResponse) ProtoMessage() {}
-
-func (x *ReplicateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_afs_proto_msgTypes[9]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ReplicateResponse.ProtoReflect.Descriptor instead.
-func (*ReplicateResponse) Descriptor() ([]byte, []int) {
-	return file_proto_afs_proto_rawDescGZIP(), []int{9}
-}
-
-func (x *ReplicateResponse) GetSuccess() bool {
-	if x != nil {
-		return x.Success
-	}
-	return false
-}
-
-func (x *ReplicateResponse) GetVersion() int32 {
-	if x != nil {
-		return x.Version
-	}
-	return 0
-}
-
-type HeartbeatRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	PrimaryAddr   string                 `protobuf:"bytes,1,opt,name=primary_addr,json=primaryAddr,proto3" json:"primary_addr,omitempty"`
-	Term          int32                  `protobuf:"varint,2,opt,name=term,proto3" json:"term,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *HeartbeatRequest) Reset() {
-	*x = HeartbeatRequest{}
-	mi := &file_proto_afs_proto_msgTypes[10]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *HeartbeatRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*HeartbeatRequest) ProtoMessage() {}
-
-func (x *HeartbeatRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_afs_proto_msgTypes[10]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use HeartbeatRequest.ProtoReflect.Descriptor instead.
-func (*HeartbeatRequest) Descriptor() ([]byte, []int) {
-	return file_proto_afs_proto_rawDescGZIP(), []int{10}
-}
-
-func (x *HeartbeatRequest) GetPrimaryAddr() string {
-	if x != nil {
-		return x.PrimaryAddr
-	}
-	return ""
-}
-
-func (x *HeartbeatRequest) GetTerm() int32 {
+func (x *LogEntry) GetTerm() int64 {
 	if x != nil {
 		return x.Term
 	}
 	return 0
 }
 
-type HeartbeatResponse struct {
+func (x *LogEntry) GetIndex() int64 {
+	if x != nil {
+		return x.Index
+	}
+	return 0
+}
+
+func (x *LogEntry) GetFilename() string {
+	if x != nil {
+		return x.Filename
+	}
+	return ""
+}
+
+func (x *LogEntry) GetData() []byte {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
+func (x *LogEntry) GetVersion() int32 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+type AppendEntriesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	Term          int64                  `protobuf:"varint,1,opt,name=term,proto3" json:"term,omitempty"`                                       // leader's current term
+	LeaderId      string                 `protobuf:"bytes,2,opt,name=leader_id,json=leaderId,proto3" json:"leader_id,omitempty"`                // leader's address (so followers can redirect clients)
+	PrevLogIndex  int64                  `protobuf:"varint,3,opt,name=prev_log_index,json=prevLogIndex,proto3" json:"prev_log_index,omitempty"` // index of log entry immediately before new ones
+	PrevLogTerm   int64                  `protobuf:"varint,4,opt,name=prev_log_term,json=prevLogTerm,proto3" json:"prev_log_term,omitempty"`    // term of prev_log_index entry
+	Entries       []*LogEntry            `protobuf:"bytes,5,rep,name=entries,proto3" json:"entries,omitempty"`                                  // empty for heartbeat
+	LeaderCommit  int64                  `protobuf:"varint,6,opt,name=leader_commit,json=leaderCommit,proto3" json:"leader_commit,omitempty"`   // leader's commitIndex
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *HeartbeatResponse) Reset() {
-	*x = HeartbeatResponse{}
-	mi := &file_proto_afs_proto_msgTypes[11]
+func (x *AppendEntriesRequest) Reset() {
+	*x = AppendEntriesRequest{}
+	mi := &file_afs_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *HeartbeatResponse) String() string {
+func (x *AppendEntriesRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*HeartbeatResponse) ProtoMessage() {}
+func (*AppendEntriesRequest) ProtoMessage() {}
 
-func (x *HeartbeatResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_afs_proto_msgTypes[11]
+func (x *AppendEntriesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_afs_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -609,23 +527,247 @@ func (x *HeartbeatResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use HeartbeatResponse.ProtoReflect.Descriptor instead.
-func (*HeartbeatResponse) Descriptor() ([]byte, []int) {
-	return file_proto_afs_proto_rawDescGZIP(), []int{11}
+// Deprecated: Use AppendEntriesRequest.ProtoReflect.Descriptor instead.
+func (*AppendEntriesRequest) Descriptor() ([]byte, []int) {
+	return file_afs_proto_rawDescGZIP(), []int{9}
 }
 
-func (x *HeartbeatResponse) GetOk() bool {
+func (x *AppendEntriesRequest) GetTerm() int64 {
 	if x != nil {
-		return x.Ok
+		return x.Term
+	}
+	return 0
+}
+
+func (x *AppendEntriesRequest) GetLeaderId() string {
+	if x != nil {
+		return x.LeaderId
+	}
+	return ""
+}
+
+func (x *AppendEntriesRequest) GetPrevLogIndex() int64 {
+	if x != nil {
+		return x.PrevLogIndex
+	}
+	return 0
+}
+
+func (x *AppendEntriesRequest) GetPrevLogTerm() int64 {
+	if x != nil {
+		return x.PrevLogTerm
+	}
+	return 0
+}
+
+func (x *AppendEntriesRequest) GetEntries() []*LogEntry {
+	if x != nil {
+		return x.Entries
+	}
+	return nil
+}
+
+func (x *AppendEntriesRequest) GetLeaderCommit() int64 {
+	if x != nil {
+		return x.LeaderCommit
+	}
+	return 0
+}
+
+type AppendEntriesResponse struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Term    int64                  `protobuf:"varint,1,opt,name=term,proto3" json:"term,omitempty"` // currentTerm, for leader to update itself
+	Success bool                   `protobuf:"varint,2,opt,name=success,proto3" json:"success,omitempty"`
+	// Optimised back-tracking: follower hints the correct nextIndex
+	ConflictIndex int64 `protobuf:"varint,3,opt,name=conflict_index,json=conflictIndex,proto3" json:"conflict_index,omitempty"` // first index of conflicting term (0 if none)
+	ConflictTerm  int64 `protobuf:"varint,4,opt,name=conflict_term,json=conflictTerm,proto3" json:"conflict_term,omitempty"`    // term of conflicting entry (0 if none)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AppendEntriesResponse) Reset() {
+	*x = AppendEntriesResponse{}
+	mi := &file_afs_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AppendEntriesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AppendEntriesResponse) ProtoMessage() {}
+
+func (x *AppendEntriesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_afs_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AppendEntriesResponse.ProtoReflect.Descriptor instead.
+func (*AppendEntriesResponse) Descriptor() ([]byte, []int) {
+	return file_afs_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *AppendEntriesResponse) GetTerm() int64 {
+	if x != nil {
+		return x.Term
+	}
+	return 0
+}
+
+func (x *AppendEntriesResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
 	}
 	return false
 }
 
-var File_proto_afs_proto protoreflect.FileDescriptor
+func (x *AppendEntriesResponse) GetConflictIndex() int64 {
+	if x != nil {
+		return x.ConflictIndex
+	}
+	return 0
+}
 
-const file_proto_afs_proto_rawDesc = "" +
+func (x *AppendEntriesResponse) GetConflictTerm() int64 {
+	if x != nil {
+		return x.ConflictTerm
+	}
+	return 0
+}
+
+type RequestVoteRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Term          int64                  `protobuf:"varint,1,opt,name=term,proto3" json:"term,omitempty"`                                       // candidate's term
+	CandidateId   string                 `protobuf:"bytes,2,opt,name=candidate_id,json=candidateId,proto3" json:"candidate_id,omitempty"`       // candidate's address
+	LastLogIndex  int64                  `protobuf:"varint,3,opt,name=last_log_index,json=lastLogIndex,proto3" json:"last_log_index,omitempty"` // index of candidate's last log entry
+	LastLogTerm   int64                  `protobuf:"varint,4,opt,name=last_log_term,json=lastLogTerm,proto3" json:"last_log_term,omitempty"`    // term  of candidate's last log entry
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RequestVoteRequest) Reset() {
+	*x = RequestVoteRequest{}
+	mi := &file_afs_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RequestVoteRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RequestVoteRequest) ProtoMessage() {}
+
+func (x *RequestVoteRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_afs_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RequestVoteRequest.ProtoReflect.Descriptor instead.
+func (*RequestVoteRequest) Descriptor() ([]byte, []int) {
+	return file_afs_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *RequestVoteRequest) GetTerm() int64 {
+	if x != nil {
+		return x.Term
+	}
+	return 0
+}
+
+func (x *RequestVoteRequest) GetCandidateId() string {
+	if x != nil {
+		return x.CandidateId
+	}
+	return ""
+}
+
+func (x *RequestVoteRequest) GetLastLogIndex() int64 {
+	if x != nil {
+		return x.LastLogIndex
+	}
+	return 0
+}
+
+func (x *RequestVoteRequest) GetLastLogTerm() int64 {
+	if x != nil {
+		return x.LastLogTerm
+	}
+	return 0
+}
+
+type RequestVoteResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Term          int64                  `protobuf:"varint,1,opt,name=term,proto3" json:"term,omitempty"` // currentTerm, for candidate to update itself
+	VoteGranted   bool                   `protobuf:"varint,2,opt,name=vote_granted,json=voteGranted,proto3" json:"vote_granted,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RequestVoteResponse) Reset() {
+	*x = RequestVoteResponse{}
+	mi := &file_afs_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RequestVoteResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RequestVoteResponse) ProtoMessage() {}
+
+func (x *RequestVoteResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_afs_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RequestVoteResponse.ProtoReflect.Descriptor instead.
+func (*RequestVoteResponse) Descriptor() ([]byte, []int) {
+	return file_afs_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *RequestVoteResponse) GetTerm() int64 {
+	if x != nil {
+		return x.Term
+	}
+	return 0
+}
+
+func (x *RequestVoteResponse) GetVoteGranted() bool {
+	if x != nil {
+		return x.VoteGranted
+	}
+	return false
+}
+
+var File_afs_proto protoreflect.FileDescriptor
+
+const file_afs_proto_rawDesc = "" +
 	"\n" +
-	"\x0fproto/afs.proto\x12\x03afs\"G\n" +
+	"\tafs.proto\x12\x03afs\"G\n" +
 	"\x0fTestAuthRequest\x12\x1a\n" +
 	"\bfilename\x18\x01 \x01(\tR\bfilename\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\x05R\aversion\"T\n" +
@@ -649,97 +791,113 @@ const file_proto_afs_proto_rawDesc = "" +
 	"\vPrimaryInfo\x12\x18\n" +
 	"\aaddress\x18\x01 \x01(\tR\aaddress\x12\x1d\n" +
 	"\n" +
-	"is_primary\x18\x02 \x01(\bR\tisPrimary\"`\n" +
-	"\x0eReplicateChunk\x12\x1a\n" +
-	"\bfilename\x18\x01 \x01(\tR\bfilename\x12\x18\n" +
-	"\acontent\x18\x02 \x01(\fR\acontent\x12\x18\n" +
-	"\aversion\x18\x03 \x01(\x05R\aversion\"G\n" +
-	"\x11ReplicateResponse\x12\x18\n" +
-	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
-	"\aversion\x18\x02 \x01(\x05R\aversion\"I\n" +
-	"\x10HeartbeatRequest\x12!\n" +
-	"\fprimary_addr\x18\x01 \x01(\tR\vprimaryAddr\x12\x12\n" +
-	"\x04term\x18\x02 \x01(\x05R\x04term\"#\n" +
-	"\x11HeartbeatResponse\x12\x0e\n" +
-	"\x02ok\x18\x01 \x01(\bR\x02ok2\xcf\x01\n" +
+	"is_primary\x18\x02 \x01(\bR\tisPrimary\"~\n" +
+	"\bLogEntry\x12\x12\n" +
+	"\x04term\x18\x01 \x01(\x03R\x04term\x12\x14\n" +
+	"\x05index\x18\x02 \x01(\x03R\x05index\x12\x1a\n" +
+	"\bfilename\x18\x03 \x01(\tR\bfilename\x12\x12\n" +
+	"\x04data\x18\x04 \x01(\fR\x04data\x12\x18\n" +
+	"\aversion\x18\x05 \x01(\x05R\aversion\"\xdf\x01\n" +
+	"\x14AppendEntriesRequest\x12\x12\n" +
+	"\x04term\x18\x01 \x01(\x03R\x04term\x12\x1b\n" +
+	"\tleader_id\x18\x02 \x01(\tR\bleaderId\x12$\n" +
+	"\x0eprev_log_index\x18\x03 \x01(\x03R\fprevLogIndex\x12\"\n" +
+	"\rprev_log_term\x18\x04 \x01(\x03R\vprevLogTerm\x12'\n" +
+	"\aentries\x18\x05 \x03(\v2\r.afs.LogEntryR\aentries\x12#\n" +
+	"\rleader_commit\x18\x06 \x01(\x03R\fleaderCommit\"\x91\x01\n" +
+	"\x15AppendEntriesResponse\x12\x12\n" +
+	"\x04term\x18\x01 \x01(\x03R\x04term\x12\x18\n" +
+	"\asuccess\x18\x02 \x01(\bR\asuccess\x12%\n" +
+	"\x0econflict_index\x18\x03 \x01(\x03R\rconflictIndex\x12#\n" +
+	"\rconflict_term\x18\x04 \x01(\x03R\fconflictTerm\"\x95\x01\n" +
+	"\x12RequestVoteRequest\x12\x12\n" +
+	"\x04term\x18\x01 \x01(\x03R\x04term\x12!\n" +
+	"\fcandidate_id\x18\x02 \x01(\tR\vcandidateId\x12$\n" +
+	"\x0elast_log_index\x18\x03 \x01(\x03R\flastLogIndex\x12\"\n" +
+	"\rlast_log_term\x18\x04 \x01(\x03R\vlastLogTerm\"L\n" +
+	"\x13RequestVoteResponse\x12\x12\n" +
+	"\x04term\x18\x01 \x01(\x03R\x04term\x12!\n" +
+	"\fvote_granted\x18\x02 \x01(\bR\vvoteGranted2\xcf\x01\n" +
 	"\x03AFS\x127\n" +
 	"\bTestAuth\x12\x14.afs.TestAuthRequest\x1a\x15.afs.TestAuthResponse\x12/\n" +
 	"\tFetchFile\x12\x10.afs.FileRequest\x1a\x0e.afs.FileChunk0\x01\x122\n" +
 	"\tStoreFile\x12\x0f.afs.StoreChunk\x1a\x12.afs.StoreResponse(\x01\x12*\n" +
 	"\n" +
 	"GetPrimary\x12\n" +
-	".afs.Empty\x1a\x10.afs.PrimaryInfo2\x85\x01\n" +
-	"\aReplica\x12>\n" +
-	"\rReplicateFile\x12\x13.afs.ReplicateChunk\x1a\x16.afs.ReplicateResponse(\x01\x12:\n" +
-	"\tHeartbeat\x12\x15.afs.HeartbeatRequest\x1a\x16.afs.HeartbeatResponseB\x12Z\x10primality_afs/pbb\x06proto3"
+	".afs.Empty\x1a\x10.afs.PrimaryInfo2\x90\x01\n" +
+	"\x04Raft\x12F\n" +
+	"\rAppendEntries\x12\x19.afs.AppendEntriesRequest\x1a\x1a.afs.AppendEntriesResponse\x12@\n" +
+	"\vRequestVote\x12\x17.afs.RequestVoteRequest\x1a\x18.afs.RequestVoteResponseB\x15Z\x13primality_afs/protob\x06proto3"
 
 var (
-	file_proto_afs_proto_rawDescOnce sync.Once
-	file_proto_afs_proto_rawDescData []byte
+	file_afs_proto_rawDescOnce sync.Once
+	file_afs_proto_rawDescData []byte
 )
 
-func file_proto_afs_proto_rawDescGZIP() []byte {
-	file_proto_afs_proto_rawDescOnce.Do(func() {
-		file_proto_afs_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_proto_afs_proto_rawDesc), len(file_proto_afs_proto_rawDesc)))
+func file_afs_proto_rawDescGZIP() []byte {
+	file_afs_proto_rawDescOnce.Do(func() {
+		file_afs_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_afs_proto_rawDesc), len(file_afs_proto_rawDesc)))
 	})
-	return file_proto_afs_proto_rawDescData
+	return file_afs_proto_rawDescData
 }
 
-var file_proto_afs_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
-var file_proto_afs_proto_goTypes = []any{
-	(*TestAuthRequest)(nil),   // 0: afs.TestAuthRequest
-	(*TestAuthResponse)(nil),  // 1: afs.TestAuthResponse
-	(*FileRequest)(nil),       // 2: afs.FileRequest
-	(*FileChunk)(nil),         // 3: afs.FileChunk
-	(*StoreChunk)(nil),        // 4: afs.StoreChunk
-	(*StoreResponse)(nil),     // 5: afs.StoreResponse
-	(*Empty)(nil),             // 6: afs.Empty
-	(*PrimaryInfo)(nil),       // 7: afs.PrimaryInfo
-	(*ReplicateChunk)(nil),    // 8: afs.ReplicateChunk
-	(*ReplicateResponse)(nil), // 9: afs.ReplicateResponse
-	(*HeartbeatRequest)(nil),  // 10: afs.HeartbeatRequest
-	(*HeartbeatResponse)(nil), // 11: afs.HeartbeatResponse
+var file_afs_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_afs_proto_goTypes = []any{
+	(*TestAuthRequest)(nil),       // 0: afs.TestAuthRequest
+	(*TestAuthResponse)(nil),      // 1: afs.TestAuthResponse
+	(*FileRequest)(nil),           // 2: afs.FileRequest
+	(*FileChunk)(nil),             // 3: afs.FileChunk
+	(*StoreChunk)(nil),            // 4: afs.StoreChunk
+	(*StoreResponse)(nil),         // 5: afs.StoreResponse
+	(*Empty)(nil),                 // 6: afs.Empty
+	(*PrimaryInfo)(nil),           // 7: afs.PrimaryInfo
+	(*LogEntry)(nil),              // 8: afs.LogEntry
+	(*AppendEntriesRequest)(nil),  // 9: afs.AppendEntriesRequest
+	(*AppendEntriesResponse)(nil), // 10: afs.AppendEntriesResponse
+	(*RequestVoteRequest)(nil),    // 11: afs.RequestVoteRequest
+	(*RequestVoteResponse)(nil),   // 12: afs.RequestVoteResponse
 }
-var file_proto_afs_proto_depIdxs = []int32{
-	0,  // 0: afs.AFS.TestAuth:input_type -> afs.TestAuthRequest
-	2,  // 1: afs.AFS.FetchFile:input_type -> afs.FileRequest
-	4,  // 2: afs.AFS.StoreFile:input_type -> afs.StoreChunk
-	6,  // 3: afs.AFS.GetPrimary:input_type -> afs.Empty
-	8,  // 4: afs.Replica.ReplicateFile:input_type -> afs.ReplicateChunk
-	10, // 5: afs.Replica.Heartbeat:input_type -> afs.HeartbeatRequest
-	1,  // 6: afs.AFS.TestAuth:output_type -> afs.TestAuthResponse
-	3,  // 7: afs.AFS.FetchFile:output_type -> afs.FileChunk
-	5,  // 8: afs.AFS.StoreFile:output_type -> afs.StoreResponse
-	7,  // 9: afs.AFS.GetPrimary:output_type -> afs.PrimaryInfo
-	9,  // 10: afs.Replica.ReplicateFile:output_type -> afs.ReplicateResponse
-	11, // 11: afs.Replica.Heartbeat:output_type -> afs.HeartbeatResponse
-	6,  // [6:12] is the sub-list for method output_type
-	0,  // [0:6] is the sub-list for method input_type
-	0,  // [0:0] is the sub-list for extension type_name
-	0,  // [0:0] is the sub-list for extension extendee
-	0,  // [0:0] is the sub-list for field type_name
+var file_afs_proto_depIdxs = []int32{
+	8,  // 0: afs.AppendEntriesRequest.entries:type_name -> afs.LogEntry
+	0,  // 1: afs.AFS.TestAuth:input_type -> afs.TestAuthRequest
+	2,  // 2: afs.AFS.FetchFile:input_type -> afs.FileRequest
+	4,  // 3: afs.AFS.StoreFile:input_type -> afs.StoreChunk
+	6,  // 4: afs.AFS.GetPrimary:input_type -> afs.Empty
+	9,  // 5: afs.Raft.AppendEntries:input_type -> afs.AppendEntriesRequest
+	11, // 6: afs.Raft.RequestVote:input_type -> afs.RequestVoteRequest
+	1,  // 7: afs.AFS.TestAuth:output_type -> afs.TestAuthResponse
+	3,  // 8: afs.AFS.FetchFile:output_type -> afs.FileChunk
+	5,  // 9: afs.AFS.StoreFile:output_type -> afs.StoreResponse
+	7,  // 10: afs.AFS.GetPrimary:output_type -> afs.PrimaryInfo
+	10, // 11: afs.Raft.AppendEntries:output_type -> afs.AppendEntriesResponse
+	12, // 12: afs.Raft.RequestVote:output_type -> afs.RequestVoteResponse
+	7,  // [7:13] is the sub-list for method output_type
+	1,  // [1:7] is the sub-list for method input_type
+	1,  // [1:1] is the sub-list for extension type_name
+	1,  // [1:1] is the sub-list for extension extendee
+	0,  // [0:1] is the sub-list for field type_name
 }
 
-func init() { file_proto_afs_proto_init() }
-func file_proto_afs_proto_init() {
-	if File_proto_afs_proto != nil {
+func init() { file_afs_proto_init() }
+func file_afs_proto_init() {
+	if File_afs_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_afs_proto_rawDesc), len(file_proto_afs_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_afs_proto_rawDesc), len(file_afs_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   12,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   2,
 		},
-		GoTypes:           file_proto_afs_proto_goTypes,
-		DependencyIndexes: file_proto_afs_proto_depIdxs,
-		MessageInfos:      file_proto_afs_proto_msgTypes,
+		GoTypes:           file_afs_proto_goTypes,
+		DependencyIndexes: file_afs_proto_depIdxs,
+		MessageInfos:      file_afs_proto_msgTypes,
 	}.Build()
-	File_proto_afs_proto = out.File
-	file_proto_afs_proto_goTypes = nil
-	file_proto_afs_proto_depIdxs = nil
+	File_afs_proto = out.File
+	file_afs_proto_goTypes = nil
+	file_afs_proto_depIdxs = nil
 }

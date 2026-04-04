@@ -2,9 +2,9 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.1
 // - protoc             v3.21.12
-// source: proto/afs.proto
+// source: afs.proto
 
-package pb
+package proto
 
 import (
 	context "context"
@@ -228,139 +228,149 @@ var AFS_ServiceDesc = grpc.ServiceDesc{
 			ClientStreams: true,
 		},
 	},
-	Metadata: "proto/afs.proto",
+	Metadata: "afs.proto",
 }
 
 const (
-	Replica_ReplicateFile_FullMethodName = "/afs.Replica/ReplicateFile"
-	Replica_Heartbeat_FullMethodName     = "/afs.Replica/Heartbeat"
+	Raft_AppendEntries_FullMethodName = "/afs.Raft/AppendEntries"
+	Raft_RequestVote_FullMethodName   = "/afs.Raft/RequestVote"
 )
 
-// ReplicaClient is the client API for Replica service.
+// RaftClient is the client API for Raft service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-type ReplicaClient interface {
-	ReplicateFile(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[ReplicateChunk, ReplicateResponse], error)
-	Heartbeat(ctx context.Context, in *HeartbeatRequest, opts ...grpc.CallOption) (*HeartbeatResponse, error)
+type RaftClient interface {
+	// Leader → Followers: replicate log entries + heartbeat (empty entries)
+	AppendEntries(ctx context.Context, in *AppendEntriesRequest, opts ...grpc.CallOption) (*AppendEntriesResponse, error)
+	// Candidate → Peers: request a vote
+	RequestVote(ctx context.Context, in *RequestVoteRequest, opts ...grpc.CallOption) (*RequestVoteResponse, error)
 }
 
-type replicaClient struct {
+type raftClient struct {
 	cc grpc.ClientConnInterface
 }
 
-func NewReplicaClient(cc grpc.ClientConnInterface) ReplicaClient {
-	return &replicaClient{cc}
+func NewRaftClient(cc grpc.ClientConnInterface) RaftClient {
+	return &raftClient{cc}
 }
 
-func (c *replicaClient) ReplicateFile(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[ReplicateChunk, ReplicateResponse], error) {
+func (c *raftClient) AppendEntries(ctx context.Context, in *AppendEntriesRequest, opts ...grpc.CallOption) (*AppendEntriesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Replica_ServiceDesc.Streams[0], Replica_ReplicateFile_FullMethodName, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	x := &grpc.GenericClientStream[ReplicateChunk, ReplicateResponse]{ClientStream: stream}
-	return x, nil
-}
-
-// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type Replica_ReplicateFileClient = grpc.ClientStreamingClient[ReplicateChunk, ReplicateResponse]
-
-func (c *replicaClient) Heartbeat(ctx context.Context, in *HeartbeatRequest, opts ...grpc.CallOption) (*HeartbeatResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(HeartbeatResponse)
-	err := c.cc.Invoke(ctx, Replica_Heartbeat_FullMethodName, in, out, cOpts...)
+	out := new(AppendEntriesResponse)
+	err := c.cc.Invoke(ctx, Raft_AppendEntries_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-// ReplicaServer is the server API for Replica service.
-// All implementations must embed UnimplementedReplicaServer
-// for forward compatibility.
-type ReplicaServer interface {
-	ReplicateFile(grpc.ClientStreamingServer[ReplicateChunk, ReplicateResponse]) error
-	Heartbeat(context.Context, *HeartbeatRequest) (*HeartbeatResponse, error)
-	mustEmbedUnimplementedReplicaServer()
+func (c *raftClient) RequestVote(ctx context.Context, in *RequestVoteRequest, opts ...grpc.CallOption) (*RequestVoteResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RequestVoteResponse)
+	err := c.cc.Invoke(ctx, Raft_RequestVote_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
-// UnimplementedReplicaServer must be embedded to have
+// RaftServer is the server API for Raft service.
+// All implementations must embed UnimplementedRaftServer
+// for forward compatibility.
+type RaftServer interface {
+	// Leader → Followers: replicate log entries + heartbeat (empty entries)
+	AppendEntries(context.Context, *AppendEntriesRequest) (*AppendEntriesResponse, error)
+	// Candidate → Peers: request a vote
+	RequestVote(context.Context, *RequestVoteRequest) (*RequestVoteResponse, error)
+	mustEmbedUnimplementedRaftServer()
+}
+
+// UnimplementedRaftServer must be embedded to have
 // forward compatible implementations.
 //
 // NOTE: this should be embedded by value instead of pointer to avoid a nil
 // pointer dereference when methods are called.
-type UnimplementedReplicaServer struct{}
+type UnimplementedRaftServer struct{}
 
-func (UnimplementedReplicaServer) ReplicateFile(grpc.ClientStreamingServer[ReplicateChunk, ReplicateResponse]) error {
-	return status.Error(codes.Unimplemented, "method ReplicateFile not implemented")
+func (UnimplementedRaftServer) AppendEntries(context.Context, *AppendEntriesRequest) (*AppendEntriesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AppendEntries not implemented")
 }
-func (UnimplementedReplicaServer) Heartbeat(context.Context, *HeartbeatRequest) (*HeartbeatResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method Heartbeat not implemented")
+func (UnimplementedRaftServer) RequestVote(context.Context, *RequestVoteRequest) (*RequestVoteResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RequestVote not implemented")
 }
-func (UnimplementedReplicaServer) mustEmbedUnimplementedReplicaServer() {}
-func (UnimplementedReplicaServer) testEmbeddedByValue()                 {}
+func (UnimplementedRaftServer) mustEmbedUnimplementedRaftServer() {}
+func (UnimplementedRaftServer) testEmbeddedByValue()              {}
 
-// UnsafeReplicaServer may be embedded to opt out of forward compatibility for this service.
-// Use of this interface is not recommended, as added methods to ReplicaServer will
+// UnsafeRaftServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to RaftServer will
 // result in compilation errors.
-type UnsafeReplicaServer interface {
-	mustEmbedUnimplementedReplicaServer()
+type UnsafeRaftServer interface {
+	mustEmbedUnimplementedRaftServer()
 }
 
-func RegisterReplicaServer(s grpc.ServiceRegistrar, srv ReplicaServer) {
-	// If the following call panics, it indicates UnimplementedReplicaServer was
+func RegisterRaftServer(s grpc.ServiceRegistrar, srv RaftServer) {
+	// If the following call panics, it indicates UnimplementedRaftServer was
 	// embedded by pointer and is nil.  This will cause panics if an
 	// unimplemented method is ever invoked, so we test this at initialization
 	// time to prevent it from happening at runtime later due to I/O.
 	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
 		t.testEmbeddedByValue()
 	}
-	s.RegisterService(&Replica_ServiceDesc, srv)
+	s.RegisterService(&Raft_ServiceDesc, srv)
 }
 
-func _Replica_ReplicateFile_Handler(srv interface{}, stream grpc.ServerStream) error {
-	return srv.(ReplicaServer).ReplicateFile(&grpc.GenericServerStream[ReplicateChunk, ReplicateResponse]{ServerStream: stream})
-}
-
-// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type Replica_ReplicateFileServer = grpc.ClientStreamingServer[ReplicateChunk, ReplicateResponse]
-
-func _Replica_Heartbeat_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(HeartbeatRequest)
+func _Raft_AppendEntries_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AppendEntriesRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ReplicaServer).Heartbeat(ctx, in)
+		return srv.(RaftServer).AppendEntries(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Replica_Heartbeat_FullMethodName,
+		FullMethod: Raft_AppendEntries_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ReplicaServer).Heartbeat(ctx, req.(*HeartbeatRequest))
+		return srv.(RaftServer).AppendEntries(ctx, req.(*AppendEntriesRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-// Replica_ServiceDesc is the grpc.ServiceDesc for Replica service.
+func _Raft_RequestVote_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RequestVoteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RaftServer).RequestVote(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Raft_RequestVote_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RaftServer).RequestVote(ctx, req.(*RequestVoteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// Raft_ServiceDesc is the grpc.ServiceDesc for Raft service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
-var Replica_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "afs.Replica",
-	HandlerType: (*ReplicaServer)(nil),
+var Raft_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "afs.Raft",
+	HandlerType: (*RaftServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "Heartbeat",
-			Handler:    _Replica_Heartbeat_Handler,
+			MethodName: "AppendEntries",
+			Handler:    _Raft_AppendEntries_Handler,
 		},
-	},
-	Streams: []grpc.StreamDesc{
 		{
-			StreamName:    "ReplicateFile",
-			Handler:       _Replica_ReplicateFile_Handler,
-			ClientStreams: true,
+			MethodName: "RequestVote",
+			Handler:    _Raft_RequestVote_Handler,
 		},
 	},
-	Metadata: "proto/afs.proto",
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "afs.proto",
 }

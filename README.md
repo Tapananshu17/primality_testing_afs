@@ -33,6 +33,16 @@ go mod tidy
    7. Primary failure redirect (verify new writes/reads route to the newly elected primary)
   
 
+go run ./server --self localhost:50051 --peers localhost:50052,localhost:50053 \
+  --data /afs_data/server1 --port 50051 --clean
+
+go run ./server --self localhost:50052 --peers localhost:50053,localhost:50051 \
+  --data /afs_data/server1 --port 50052 --clean
+
+go run ./server --self localhost:50053 --peers localhost:50051,localhost:50052 \
+  --data /afs_data/server1 --port 50053 --clean
+
+
 ### Crash Testing Notes
  
 Scenario 5: Server crash during read (Mid-operation Failover)
