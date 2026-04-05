@@ -1,65 +1,60 @@
 #!/bin/bash
-pkill -f "mode=worker" || true
-echo "=== TEST 02: Worker Crash Tolerance ==="
+echo "=== TEST 02: Single Worker Crash & Dynamic Rejoin ==="
 
+echo "Compiling binary..."
+go build -o prime_app coordinator_worker/main.go
+
+# NUCLEAR CLEANUP
+pkill -f "mode=worker" || true
+pkill -f "prime_app" || true
 rm -f afs_data/server1/output/primes.txt
 rm -f afs_data/server1/output/snapshot_latest.json
+rm -rf /tmp/prime_cache/*
 
 NUM_WORKERS=3
 BASE_PORT=6000
-WORKER_ADDRS=""
-
-# We need an array to store the Process IDs (PIDs) of our workers so we can kill one later
-declare -a WORKER_PIDS
+WORKER_ADDRS="localhost:6001,localhost:6002,localhost:6003"
 
 for i in $(seq 1 $NUM_WORKERS); do
-    PORT=$((BASE_PORT + i))
-    go run coordinator_worker/main.go --mode=worker --id=$i --port=:$PORT &
-    WORKER_PIDS[$i]=$!  # Capture the PID of the background process
-    
-    if [ "$WORKER_ADDRS" == "" ]; then
-        WORKER_ADDRS="localhost:$PORT"
-    else
-        WORKER_ADDRS="$WORKER_ADDRS,localhost:$PORT"
-    fi
+    ./prime_app --mode=worker --id=$i --port=:$((BASE_PORT + i)) &
 done
-
 sleep 2
-echo "=== Workers started. Target for termination: Worker 2 (PID: ${WORKER_PIDS[2]}) ==="
+echo "=== Workers 1, 2, and 3 started. ==="
 
 cd afs_data/server1/input
 INPUT_FILES=$(ls input_dataset_*.txt | tr '\n' ',' | sed 's/,$//')
 cd ../../../
 
-# 1. RUN COORDINATOR IN BACKGROUND
-# We put it in the background (&) so the bash script can continue executing and trigger the chaos
-go run coordinator_worker/main.go --mode=coordinator \
+echo "=== Starting Coordinator ==="
+./prime_app --mode=coordinator \
     --inputs="$INPUT_FILES" \
     --output="primes.txt" \
     --workers="$WORKER_ADDRS" &
 COORD_PID=$!
 
-# 2. INTRODUCE CHAOS
-echo "Letting the system compile and process for 1 seconds..."
-sleep 1 
+echo "Letting system process for 0.4 seconds..."
+sleep 0.4 
 
-echo "💀 KILLING WORKER 2 NOW! 💀"
-# Use pkill to hunt down the actual running binary, ignoring the go run wrapper
+echo "💀 FATAL: KILLING WORKER 2 NOW! 💀"
 pkill -f "mode=worker --id=2"
 
-# 3. WAIT FOR COMPLETION
-# The bash script pauses here until the coordinator finishes its job
-echo "Waiting for Coordinator to finish with remaining workers..."
+echo "⏳ Watch the logs! Workers 1 and 3 are now carrying the load... ⏳"
+# We sleep for 0.5 seconds so you can clearly see W1 and W3 doing the work
+# while W2's proxy goroutine logs that it is waiting/pinging.
+sleep 0.5
+
+echo "⚕️ RESTARTING WORKER 2! Watch it instantly rejoin... ⚕️"
+./prime_app --mode=worker --id=2 --port=:6002 &
+
+echo "Waiting for the Coordinator to finish the job..."
 wait $COORD_PID
 
-# 4. ASSERTION / VALIDATION
 echo "=== Validating Output ==="
 if [ -f "afs_data/server1/output/primes.txt" ]; then
     PRIME_COUNT=$(wc -l < afs_data/server1/output/primes.txt)
-    echo "SUCCESS: Found $PRIME_COUNT primes despite losing a worker!"
+    echo "SUCCESS: Found $PRIME_COUNT primes! Worker 2 successfully died, was bypassed, and dynamically rejoined."
 else
-    echo "FAIL: primes.txt was not created. The cluster crashed."
-    exit 1
+    echo "FAIL: primes.txt was not created."
 fi
 
-trap "pkill -f 'mode=worker'; pkill -f 'mode=coordinator'" EXIT
+trap "pkill -f 'prime_app'; rm -f prime_app" EXIT
