@@ -50,4 +50,6 @@ go run ./coordinator_worker/
 go run server/main.go --port :50051 --data ./afs_data/server1
 chmod +x run_cluster.sh
 ./run_cluster.sh
-pkill -f "mode=worker
+pkill -f "mode=worker"
+
+./test_01_normal.sh

@@ -24,8 +24,8 @@ const (
 	chunkSize    = 10000
 	snapshotFile = "snapshot_latest.json"
 	rpcTimeout   = 30 * time.Second
-	snapInterval = 1 * time.Second
-	maxRetries   = 3 // FIX #4: Limit RPC retries to prevent infinite loops
+	snapInterval = 200 * time.Millisecond
+	maxRetries   = 3
 )
 
 type Stats struct {
@@ -36,7 +36,6 @@ type Stats struct {
 	Duration     time.Duration
 }
 
-// FIX #4: Wrapper struct to track retries without altering the protobuf
 type Job struct {
 	Chunk   *primepb.WorkChunk
 	Retries int
@@ -121,9 +120,8 @@ func takeSnapshot(
 			afsClient.AFS_Write(wfd, out.Bytes())
 			afsClient.AFS_Close(wfd)
 			
-			// FIX #1: Only clear the buffer if the AFS write was actually successful!
 			primeMu.Lock()
-			*unflushedPrimes = nil 
+			*unflushedPrimes = (*unflushedPrimes)[len(batchToWrite):]
 			primeMu.Unlock()
 			
 			log.Printf("[SNAPSHOT] Appended %d NEW primes to %s", len(batchToWrite), outputFile)
@@ -223,7 +221,6 @@ func rebuildPrimeSet(afsClient *client.AFSClient, outputFile string) map[uint64]
 		}
 	}
 	
-	// FIX #7: Scanner error check on rebuild
 	if err := sc.Err(); err != nil {
 		log.Printf("[coordinator] WARNING: error reading existing primes.txt: %v", err)
 	}
@@ -254,7 +251,6 @@ func Run(afsAddrs string, cacheDir string, inputFiles []string, outputFile strin
 			fileChunkMap = snap.FileChunkMap
 			startChunkID = snap.NextChunkID
 			primeSet = rebuildPrimeSet(afsClient, outputFile)
-			// FIX #2 & #8: Removed inFlightOffsets entirely. Idempotent retries are safer.
 		}
 	}
 
@@ -276,18 +272,17 @@ func Run(afsAddrs string, cacheDir string, inputFiles []string, outputFile strin
 
 	numWorkers := len(grpcClients)
 	
-	// FIX #3: Silent hang prevention
 	if numWorkers == 0 {
 		return Stats{}, fmt.Errorf("no workers available")
 	}
 	
-	// FIX #4: Channels now handle Jobs instead of raw chunks
 	jobs := make(chan Job, numWorkers*4)
 	requeueCh := make(chan Job, numWorkers*4)
-	results := make(chan []uint64, numWorkers*1000)
+	results := make(chan *primepb.PrimeResult, numWorkers*1000)
 
 	var proxyWg, chunkWg, ingestWg, forwarderWg sync.WaitGroup
-	var primeMu, completedMu sync.Mutex
+	// FIX: The Master Lock is defined here so all goroutines can access it safely
+	var primeMu, completedMu, snapshotMutex sync.Mutex
 
 	completedIDs := make([]int32, 0, 1024)
 	for _, r := range completedRanges {
@@ -303,15 +298,26 @@ func Run(afsAddrs string, cacheDir string, inputFiles []string, outputFile strin
 	ingestWg.Add(1)
 	go func() {
 		defer ingestWg.Done()
-		for primesBatch := range results {
+		for resp := range results {
+			// ⚡ MASTER LOCK IN: Wait for snapshots to finish
+			snapshotMutex.Lock()
+
 			primeMu.Lock()
-			for _, p := range primesBatch {
+			for _, p := range resp.Primes {
 				if _, exists := primeSet[p]; !exists {
 					primeSet[p] = struct{}{}
 					unflushedPrimes = append(unflushedPrimes, p)
 				}
 			}
 			primeMu.Unlock()
+
+			// Safely mark complete before releasing the snapshot lock
+			completedMu.Lock()
+			completedIDs = append(completedIDs, resp.ChunkId)
+			completedMu.Unlock()
+
+			// ⚡ MASTER LOCK OUT: Let snapshots proceed
+			snapshotMutex.Unlock()
 		}
 	}()
 
@@ -329,12 +335,14 @@ func Run(afsAddrs string, cacheDir string, inputFiles []string, outputFile strin
 		for {
 			select {
 			case <-ticker.C:
+				snapshotMutex.Lock()
 				takeSnapshot(
 					afsClient, grpcClients, outputFile,
 					primeSet, &unflushedPrimes, &primeMu,
 					&completedMu, &completedIDs,
 					fileChunkMap, &nextChunkID,
 				)
+				snapshotMutex.Unlock()
 			case <-snapCtx.Done():
 				return
 			}
@@ -351,28 +359,23 @@ func Run(afsAddrs string, cacheDir string, inputFiles []string, outputFile strin
 				cancel()
 
 				if err != nil {
-					// FIX #4: Retry limit enforcement
 					if job.Retries >= maxRetries {
 						log.Fatalf("[FATAL] chunk %d failed after %d retries: %v", job.Chunk.Id, maxRetries, err)
 					}
 					log.Printf("[coordinator] RPC error worker %d chunk %d: %v — re-queuing (attempt %d)", id, job.Chunk.Id, err, job.Retries+1)
 					job.Retries++
 					requeueCh <- job
-					continue
+					break
 				}
 
-				results <- resp.Primes
-
-				completedMu.Lock()
-				completedIDs = append(completedIDs, job.Chunk.Id)
-				completedMu.Unlock()
+				results <- resp
 				chunkWg.Done()
 			}
 		}(c, i)
 	}
 
 	totalNumbers := 0
-	chunkID := startChunkID
+	chunkID := 0 // Guaranteed deterministic replay
 
 	for _, filename := range inputFiles {
 		fd, err := afsClient.AFS_Open(filename, os.O_RDONLY)
@@ -405,16 +408,13 @@ func Run(afsAddrs string, cacheDir string, inputFiles []string, outputFile strin
 			chunkID++
 			nextChunkID = chunkID
 
-			// FIX #5 & #6: Do not count numbers or append to map if the chunk is already completed
 			if isCompleted(cid, completedRanges) {
 				current = nil
 				return
 			}
 			
-			// Only update stats for actual work being dispatched
 			totalNumbers += len(current)
 			
-			// Initialize map safely if needed
 			if fileChunkMap[filename] == nil {
 				fileChunkMap[filename] = []int32{}
 			}
@@ -456,12 +456,14 @@ func Run(afsAddrs string, cacheDir string, inputFiles []string, outputFile strin
 	close(results)        
 	ingestWg.Wait()       
 
+	snapshotMutex.Lock()
 	takeSnapshot(
 		afsClient, grpcClients, outputFile,
 		primeSet, &unflushedPrimes, &primeMu,
 		&completedMu, &completedIDs,
 		fileChunkMap, &nextChunkID,
 	)
+	snapshotMutex.Unlock()
 
 	primeMu.Lock()
 	finalCount := len(primeSet)
