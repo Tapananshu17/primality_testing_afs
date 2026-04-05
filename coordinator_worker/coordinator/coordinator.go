@@ -408,12 +408,13 @@ func Run(afsAddrs string, cacheDir string, inputFiles []string, outputFile strin
 			chunkID++
 			nextChunkID = chunkID
 
+			totalNumbers += len(current)
+			
 			if isCompleted(cid, completedRanges) {
 				current = nil
 				return
 			}
 			
-			totalNumbers += len(current)
 			
 			if fileChunkMap[filename] == nil {
 				fileChunkMap[filename] = []int32{}
