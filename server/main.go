@@ -82,37 +82,41 @@ func (fs *FileStore) Read(name string) ([]byte, int32, bool) {
 	return data, fs.versions[name], true
 }
 
-func (fs *FileStore) Version(name string) (int32, bool) {
-	fs.mu.RLock()
-	defer fs.mu.RUnlock()
-	
-	// Ensure the file actually exists in either directory
-	if _, err := os.Stat(fs.resolveReadPath(name)); os.IsNotExist(err) {
-		return 0, false
+func (s *primaryServer) runHeartbeats() {
+	ticker := time.NewTicker(heartbeatInt)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		for i, stub := range s.backups {
+			if stub == nil {
+				continue
+			}
+
+			go func(i int, stub pb.ReplicaClient) {
+				ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+				defer cancel()
+
+				if _, err := stub.Heartbeat(ctx, &pb.HeartbeatRequest{
+					PrimaryAddr: s.selfAddr,
+					Term:        1,
+				}); err != nil {
+					log.Printf("[primary] heartbeat to backup[%d] failed: %v", i, err)
+				}
+			}(i, stub)
+		}
 	}
-	
-	v := fs.versions[name]
-	return v, true
 }
 
-// ─── AFS gRPC service ─────────────────────────────────────────────────────────
-
-type AFSService struct {
-	pb.UnimplementedAFSServer
-	store *FileStore
-	raft  *RaftNode
-	self  string
+func (s *primaryServer) filePath(filename string) string {
+	base := filepath.Base(filename)
+	if base == "primes.txt" {
+		return filepath.Join(s.outputDir, base)
+	}
+	return filepath.Join(s.inputDir, base)
 }
 
-const chunkSize = 64 * 1024
-
-func (s *AFSService) GetPrimary(_ context.Context, _ *pb.Empty) (*pb.PrimaryInfo, error) {
-	isLeader := s.raft.isLeader()
-	addr := s.self
-	if !isLeader {
-		addr = s.raft.LeaderAddr()
-	}
-	return &pb.PrimaryInfo{Address: addr, IsPrimary: isLeader}, nil
+func (s *primaryServer) GetPrimary(_ context.Context, _ *pb.Empty) (*pb.PrimaryInfo, error) {
+	return &pb.PrimaryInfo{Address: s.selfAddr, IsPrimary: true}, nil
 }
 
 func (s *AFSService) TestAuth(_ context.Context, req *pb.TestAuthRequest) (*pb.TestAuthResponse, error) {

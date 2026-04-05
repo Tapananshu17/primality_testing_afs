@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.1
 // - protoc             v3.21.12
-// source: proto/prime.proto
+// source: prime_proto/prime.proto
 
 package primepb
 
@@ -20,14 +20,15 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	PrimeWorker_ProcessChunk_FullMethodName = "/primepb.PrimeWorker/ProcessChunk"
+	PrimeWorker_CaptureState_FullMethodName = "/primepb.PrimeWorker/CaptureState"
 )
 
 // PrimeWorkerClient is the client API for PrimeWorker service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type PrimeWorkerClient interface {
-	// The Coordinator sends a WorkChunk, the Worker processes it and returns a PrimeResult.
 	ProcessChunk(ctx context.Context, in *WorkChunk, opts ...grpc.CallOption) (*PrimeResult, error)
+	CaptureState(ctx context.Context, in *SnapshotRequest, opts ...grpc.CallOption) (*SnapshotResponse, error)
 }
 
 type primeWorkerClient struct {
@@ -48,12 +49,22 @@ func (c *primeWorkerClient) ProcessChunk(ctx context.Context, in *WorkChunk, opt
 	return out, nil
 }
 
+func (c *primeWorkerClient) CaptureState(ctx context.Context, in *SnapshotRequest, opts ...grpc.CallOption) (*SnapshotResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SnapshotResponse)
+	err := c.cc.Invoke(ctx, PrimeWorker_CaptureState_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PrimeWorkerServer is the server API for PrimeWorker service.
 // All implementations must embed UnimplementedPrimeWorkerServer
 // for forward compatibility.
 type PrimeWorkerServer interface {
-	// The Coordinator sends a WorkChunk, the Worker processes it and returns a PrimeResult.
 	ProcessChunk(context.Context, *WorkChunk) (*PrimeResult, error)
+	CaptureState(context.Context, *SnapshotRequest) (*SnapshotResponse, error)
 	mustEmbedUnimplementedPrimeWorkerServer()
 }
 
@@ -66,6 +77,9 @@ type UnimplementedPrimeWorkerServer struct{}
 
 func (UnimplementedPrimeWorkerServer) ProcessChunk(context.Context, *WorkChunk) (*PrimeResult, error) {
 	return nil, status.Error(codes.Unimplemented, "method ProcessChunk not implemented")
+}
+func (UnimplementedPrimeWorkerServer) CaptureState(context.Context, *SnapshotRequest) (*SnapshotResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CaptureState not implemented")
 }
 func (UnimplementedPrimeWorkerServer) mustEmbedUnimplementedPrimeWorkerServer() {}
 func (UnimplementedPrimeWorkerServer) testEmbeddedByValue()                     {}
@@ -106,6 +120,24 @@ func _PrimeWorker_ProcessChunk_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PrimeWorker_CaptureState_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SnapshotRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PrimeWorkerServer).CaptureState(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PrimeWorker_CaptureState_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PrimeWorkerServer).CaptureState(ctx, req.(*SnapshotRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PrimeWorker_ServiceDesc is the grpc.ServiceDesc for PrimeWorker service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -117,7 +149,11 @@ var PrimeWorker_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "ProcessChunk",
 			Handler:    _PrimeWorker_ProcessChunk_Handler,
 		},
+		{
+			MethodName: "CaptureState",
+			Handler:    _PrimeWorker_CaptureState_Handler,
+		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "proto/prime.proto",
+	Metadata: "prime_proto/prime.proto",
 }

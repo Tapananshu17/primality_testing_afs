@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -13,13 +14,19 @@ import (
 	"sync"
 	"time"
 
-	"primality_afs/client"
-	"primality_afs/prime_proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"primality_afs/client"
+	primepb "primality_afs/prime_proto"
 )
 
-const chunkSize = 10000
+const (
+	chunkSize    = 10000
+	snapshotFile = "snapshot_latest.json"
+	rpcTimeout   = 30 * time.Second
+	snapInterval = 200 * time.Millisecond
+	maxRetries   = 3
+)
 
 type Stats struct {
 	InputFiles   int
@@ -29,34 +36,233 @@ type Stats struct {
 	Duration     time.Duration
 }
 
-func Run(
-	afsAddrs string,
-	cacheDir string,
-	inputFiles []string,
+type Job struct {
+	Chunk   *primepb.WorkChunk
+	Retries int
+}
+
+type GlobalSnapshot struct {
+	Timestamp       time.Time             `json:"timestamp"`
+	TotalPrimes     int                   `json:"total_primes_found"`
+	NextChunkID     int                   `json:"next_chunk_id"`
+	CompletedRanges []ChunkRange          `json:"completed_ranges"`
+	FileChunkMap    map[string][]int32    `json:"file_chunk_map"`
+	Workers         map[int]WorkerState   `json:"worker_states"`
+}
+
+type ChunkRange struct {
+	Lo int32 `json:"lo"`
+	Hi int32 `json:"hi"`
+}
+
+type WorkerState struct {
+	ChunkID int32 `json:"chunk_id"`
+	Offset  int32 `json:"offset"`
+}
+
+func compactRanges(ids []int32) []ChunkRange {
+	if len(ids) == 0 {
+		return nil
+	}
+	sorted := make([]int32, len(ids))
+	copy(sorted, ids)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
+
+	ranges := []ChunkRange{{Lo: sorted[0], Hi: sorted[0]}}
+	for _, id := range sorted[1:] {
+		if id == ranges[len(ranges)-1].Hi+1 {
+			ranges[len(ranges)-1].Hi = id
+		} else {
+			ranges = append(ranges, ChunkRange{Lo: id, Hi: id})
+		}
+	}
+	return ranges
+}
+
+func isCompleted(id int32, ranges []ChunkRange) bool {
+	for _, r := range ranges {
+		if id >= r.Lo && id <= r.Hi {
+			return true
+		}
+	}
+	return false
+}
+
+func takeSnapshot(
+	afsClient *client.AFSClient,
+	workerClients []primepb.PrimeWorkerClient,
 	outputFile string,
-	workerAddrs []string,
-) (Stats, error) {
+	primeSet map[uint64]struct{},
+	unflushedPrimes *[]uint64,
+	primeMu *sync.Mutex,
+	completedMu *sync.Mutex,
+	completedIDs *[]int32,
+	fileChunkMap map[string][]int32,
+	nextChunkID *int,
+) {
+	log.Println("[SNAPSHOT] Initiating Chandy-Lamport Global Snapshot...")
+
+	primeMu.Lock()
+	totalPrimes := len(primeSet)
+	batchToWrite := make([]uint64, len(*unflushedPrimes))
+	copy(batchToWrite, *unflushedPrimes)
+	primeMu.Unlock()
+
+	if len(batchToWrite) > 0 {
+		sort.Slice(batchToWrite, func(i, j int) bool { return batchToWrite[i] < batchToWrite[j] })
+		var out bytes.Buffer
+		for _, p := range batchToWrite {
+			out.WriteString(fmt.Sprintf("%d\n", p))
+		}
+
+		wfd, werr := afsClient.AFS_Open(outputFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND)
+		if werr == nil {
+			afsClient.AFS_Write(wfd, out.Bytes())
+			afsClient.AFS_Close(wfd)
+			
+			primeMu.Lock()
+			*unflushedPrimes = (*unflushedPrimes)[len(batchToWrite):]
+			primeMu.Unlock()
+			
+			log.Printf("[SNAPSHOT] Appended %d NEW primes to %s", len(batchToWrite), outputFile)
+		} else {
+			log.Printf("[SNAPSHOT] WARNING: failed to append to %s: %v (primes retained in buffer)", outputFile, werr)
+		}
+	}
+
+	snap := GlobalSnapshot{
+		Timestamp:    time.Now(),
+		TotalPrimes:  totalPrimes,
+		NextChunkID:  *nextChunkID,
+		Workers:      make(map[int]WorkerState),
+		FileChunkMap: fileChunkMap,
+	}
+
+	completedMu.Lock()
+	snap.CompletedRanges = compactRanges(*completedIDs)
+	completedMu.Unlock()
+
+	for i, wc := range workerClients {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		resp, err := wc.CaptureState(ctx, &primepb.SnapshotRequest{Marker: "snap"})
+		cancel()
+		if err == nil && resp.CurrentChunkId != -1 {
+			snap.Workers[i] = WorkerState{
+				ChunkID: resp.CurrentChunkId,
+				Offset:  resp.Offset,
+			}
+		}
+	}
+
+	jsonBytes, _ := json.MarshalIndent(snap, "", "  ")
+	sfd, serr := afsClient.AFS_Open(snapshotFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC)
+	if serr == nil {
+		afsClient.AFS_Write(sfd, jsonBytes)
+		afsClient.AFS_Close(sfd)
+		log.Printf("[SNAPSHOT] Saved (total_primes=%d, ranges=%d)", snap.TotalPrimes, len(snap.CompletedRanges))
+	} else {
+		log.Printf("[SNAPSHOT] WARNING: failed to write snapshot JSON: %v", serr)
+	}
+}
+
+func loadSnapshot(afsClient *client.AFSClient) (*GlobalSnapshot, error) {
+	fd, err := afsClient.AFS_Open(snapshotFile, os.O_RDONLY)
+	if err != nil {
+		return nil, nil
+	}
+	defer afsClient.AFS_Close(fd)
+
+	var buf bytes.Buffer
+	slab := make([]byte, 64*1024)
+	for {
+		n, readErr := afsClient.AFS_Read(fd, slab)
+		if n > 0 {
+			buf.Write(slab[:n])
+		}
+		if readErr != nil {
+			break
+		}
+	}
+
+	var snap GlobalSnapshot
+	if err := json.Unmarshal(buf.Bytes(), &snap); err != nil {
+		return nil, fmt.Errorf("corrupt snapshot: %w", err)
+	}
+	return &snap, nil
+}
+
+func rebuildPrimeSet(afsClient *client.AFSClient, outputFile string) map[uint64]struct{} {
+	set := make(map[uint64]struct{})
+	fd, err := afsClient.AFS_Open(outputFile, os.O_RDONLY)
+	if err != nil {
+		return set
+	}
+	defer afsClient.AFS_Close(fd)
+
+	var buf bytes.Buffer
+	slab := make([]byte, 64*1024)
+	for {
+		n, readErr := afsClient.AFS_Read(fd, slab)
+		if n > 0 {
+			buf.Write(slab[:n])
+		}
+		if readErr != nil {
+			break
+		}
+	}
+
+	sc := bufio.NewScanner(&buf)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line != "" {
+			if v, err := strconv.ParseUint(line, 10, 64); err == nil {
+				set[v] = struct{}{}
+			}
+		}
+	}
+	
+	if err := sc.Err(); err != nil {
+		log.Printf("[coordinator] WARNING: error reading existing primes.txt: %v", err)
+	}
+	
+	return set
+}
+
+func Run(afsAddrs string, cacheDir string, inputFiles []string, outputFile string, workerAddrs []string, recoverMode bool) (Stats, error) {
 	startTime := time.Now()
 
-	log.Printf("[coordinator] connecting to AFS: %s", afsAddrs)
 	afsClient, err := client.InitAFS(afsAddrs, cacheDir)
 	if err != nil {
 		return Stats{}, fmt.Errorf("AFS connect: %w", err)
 	}
-	log.Printf("[coordinator] AFS ready")
 
-	// Connect to gRPC Workers
+	var completedRanges []ChunkRange
+	fileChunkMap := make(map[string][]int32)
+	startChunkID := 0
+	
+	primeSet := make(map[uint64]struct{})
+	var unflushedPrimes []uint64
+
+	if recoverMode {
+		snap, snapErr := loadSnapshot(afsClient)
+		if snapErr == nil && snap != nil {
+			log.Printf("[coordinator] RECOVERY: snapshot from %s", snap.Timestamp)
+			completedRanges = snap.CompletedRanges
+			fileChunkMap = snap.FileChunkMap
+			startChunkID = snap.NextChunkID
+			primeSet = rebuildPrimeSet(afsClient, outputFile)
+		}
+	}
+
 	var conns []*grpc.ClientConn
 	var grpcClients []primepb.PrimeWorkerClient
 
 	for _, addr := range workerAddrs {
 		conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
-		if err != nil {
-			log.Printf("[coordinator] WARNING: failed to connect to worker %s: %v", addr, err)
-			continue
+		if err == nil {
+			conns = append(conns, conn)
+			grpcClients = append(grpcClients, primepb.NewPrimeWorkerClient(conn))
 		}
-		conns = append(conns, conn)
-		grpcClients = append(grpcClients, primepb.NewPrimeWorkerClient(conn))
 	}
 	defer func() {
 		for _, conn := range conns {
@@ -65,46 +271,116 @@ func Run(
 	}()
 
 	numWorkers := len(grpcClients)
+	
 	if numWorkers == 0 {
 		return Stats{}, fmt.Errorf("no workers available")
 	}
+	
+	jobs := make(chan Job, numWorkers*4)
+	requeueCh := make(chan Job, numWorkers*4)
+	results := make(chan *primepb.PrimeResult, numWorkers*1000)
 
-	jobs := make(chan *primepb.WorkChunk, numWorkers*4)
-	results := make(chan []uint64, numWorkers*1000)
-	var wg sync.WaitGroup
+	var proxyWg, chunkWg, ingestWg, forwarderWg sync.WaitGroup
+	// FIX: The Master Lock is defined here so all goroutines can access it safely
+	var primeMu, completedMu, snapshotMutex sync.Mutex
 
-	log.Printf("[coordinator] starting %d proxy clients for gRPC workers", numWorkers)
-	for i, c := range grpcClients {
-		wg.Add(1)
-		go func(workerClient primepb.PrimeWorkerClient, id int) {
-			defer wg.Done()
-			for chunk := range jobs {
-				resp, err := workerClient.ProcessChunk(context.Background(), chunk)
-				if err != nil {
-					log.Printf("[coordinator] RPC error on worker %d: %v", id, err)
-					continue
+	completedIDs := make([]int32, 0, 1024)
+	for _, r := range completedRanges {
+		for id := r.Lo; id <= r.Hi; id++ {
+			completedIDs = append(completedIDs, id)
+		}
+	}
+
+	nextChunkID := startChunkID
+	snapCtx, snapCancel := context.WithCancel(context.Background())
+	defer snapCancel()
+
+	ingestWg.Add(1)
+	go func() {
+		defer ingestWg.Done()
+		for resp := range results {
+			// ⚡ MASTER LOCK IN: Wait for snapshots to finish
+			snapshotMutex.Lock()
+
+			primeMu.Lock()
+			for _, p := range resp.Primes {
+				if _, exists := primeSet[p]; !exists {
+					primeSet[p] = struct{}{}
+					unflushedPrimes = append(unflushedPrimes, p)
 				}
-				results <- resp.Primes
+			}
+			primeMu.Unlock()
+
+			// Safely mark complete before releasing the snapshot lock
+			completedMu.Lock()
+			completedIDs = append(completedIDs, resp.ChunkId)
+			completedMu.Unlock()
+
+			// ⚡ MASTER LOCK OUT: Let snapshots proceed
+			snapshotMutex.Unlock()
+		}
+	}()
+
+	forwarderWg.Add(1)
+	go func() {
+		defer forwarderWg.Done()
+		for job := range requeueCh {
+			jobs <- job
+		}
+	}()
+
+	go func() {
+		ticker := time.NewTicker(snapInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				snapshotMutex.Lock()
+				takeSnapshot(
+					afsClient, grpcClients, outputFile,
+					primeSet, &unflushedPrimes, &primeMu,
+					&completedMu, &completedIDs,
+					fileChunkMap, &nextChunkID,
+				)
+				snapshotMutex.Unlock()
+			case <-snapCtx.Done():
+				return
+			}
+		}
+	}()
+
+	for i, c := range grpcClients {
+		proxyWg.Add(1)
+		go func(workerClient primepb.PrimeWorkerClient, id int) {
+			defer proxyWg.Done()
+			for job := range jobs {
+				ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
+				resp, err := workerClient.ProcessChunk(ctx, job.Chunk)
+				cancel()
+
+				if err != nil {
+					if job.Retries >= maxRetries {
+						log.Fatalf("[FATAL] chunk %d failed after %d retries: %v", job.Chunk.Id, maxRetries, err)
+					}
+					log.Printf("[coordinator] RPC error worker %d chunk %d: %v — re-queuing (attempt %d)", id, job.Chunk.Id, err, job.Retries+1)
+					job.Retries++
+					requeueCh <- job
+					break
+				}
+
+				results <- resp
+				chunkWg.Done()
 			}
 		}(c, i)
 	}
 
-	// Wait and close results channel when all proxies are done
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
 	totalNumbers := 0
-	chunkID := 0
+	chunkID := 0 // Guaranteed deterministic replay
 
-	// Read from AFS and stream to the jobs channel
 	for _, filename := range inputFiles {
-		log.Printf("[coordinator] fetching: %s", filename)
-
 		fd, err := afsClient.AFS_Open(filename, os.O_RDONLY)
 		if err != nil {
-			log.Printf("[coordinator] WARNING: cannot open %s — skipping (%v)", filename, err)
+			log.Printf("[coordinator] WARNING: failed to open %s on AFS: %v", filename, err)
 			continue
 		}
 
@@ -124,68 +400,80 @@ func Run(
 		scanner := bufio.NewScanner(&buf)
 		var current []uint64
 
+		flush := func() {
+			if len(current) == 0 {
+				return
+			}
+			cid := int32(chunkID)
+			chunkID++
+			nextChunkID = chunkID
+
+			totalNumbers += len(current)
+			
+			if isCompleted(cid, completedRanges) {
+				current = nil
+				return
+			}
+			
+			
+			if fileChunkMap[filename] == nil {
+				fileChunkMap[filename] = []int32{}
+			}
+			fileChunkMap[filename] = append(fileChunkMap[filename], cid)
+
+			chunkWg.Add(1)
+			jobs <- Job{Chunk: &primepb.WorkChunk{Id: cid, Values: current}, Retries: 0}
+			current = nil
+		}
+
 		for scanner.Scan() {
 			line := strings.TrimSpace(scanner.Text())
-			if line == "" { continue }
-			
+			if line == "" {
+				continue
+			}
 			n, parseErr := strconv.ParseUint(line, 10, 64)
 			if parseErr != nil {
 				continue
 			}
 			current = append(current, n)
-			totalNumbers++
 
 			if len(current) >= chunkSize {
-				jobs <- &primepb.WorkChunk{Id: int32(chunkID), Values: current}
-				chunkID++
-				current = nil
+				flush()
 			}
 		}
-		if len(current) > 0 {
-			jobs <- &primepb.WorkChunk{Id: int32(chunkID), Values: current}
-			chunkID++
+		
+		if err := scanner.Err(); err != nil {
+			log.Printf("[coordinator] FATAL: scanner error reading %s: %v", filename, err)
 		}
-		log.Printf("[coordinator] %s done", filename)
+		flush()
 	}
 
-	close(jobs)
-	log.Printf("[coordinator] all input dispatched — %d numbers, %d chunks", totalNumbers, chunkID)
+	chunkWg.Wait()        
+	snapCancel()          
+	close(requeueCh)      
+	forwarderWg.Wait()    
+	close(jobs)           
+	proxyWg.Wait()        
+	close(results)        
+	ingestWg.Wait()       
 
-	// Collect unique primes
-	primeSet := make(map[uint64]struct{})
-	for primesBatch := range results {
-		for _, p := range primesBatch {
-			primeSet[p] = struct{}{}
-		}
-	}
+	snapshotMutex.Lock()
+	takeSnapshot(
+		afsClient, grpcClients, outputFile,
+		primeSet, &unflushedPrimes, &primeMu,
+		&completedMu, &completedIDs,
+		fileChunkMap, &nextChunkID,
+	)
+	snapshotMutex.Unlock()
 
-	uniquePrimes := make([]uint64, 0, len(primeSet))
-	for p := range primeSet {
-		uniquePrimes = append(uniquePrimes, p)
-	}
-	sort.Slice(uniquePrimes, func(i, j int) bool { return uniquePrimes[i] < uniquePrimes[j] })
-
-	// Write Output to AFS
-	var out bytes.Buffer
-	for _, p := range uniquePrimes {
-		fmt.Fprintf(&out, "%d\n", p)
-	}
-
-	fd, err := afsClient.AFS_Open(outputFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC)
-	if err != nil {
-		return Stats{}, fmt.Errorf("open output %s: %w", outputFile, err)
-	}
-	if _, err := afsClient.AFS_Write(fd, out.Bytes()); err != nil {
-		afsClient.AFS_Close(fd)
-		return Stats{}, fmt.Errorf("write %s: %w", outputFile, err)
-	}
-	afsClient.AFS_Close(fd)
-	log.Printf("[coordinator] saved '%s' to AFS", outputFile)
+	primeMu.Lock()
+	finalCount := len(primeSet)
+	primeMu.Unlock()
 
 	return Stats{
 		InputFiles:   len(inputFiles),
 		TotalNumbers: totalNumbers,
-		PrimesFound:  len(uniquePrimes),
+		PrimesFound:  finalCount,
 		Workers:      numWorkers,
 		Duration:     time.Since(startTime),
 	}, nil
