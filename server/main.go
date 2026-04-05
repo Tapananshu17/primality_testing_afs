@@ -36,34 +36,46 @@ import (
 // ─── File Store ───────────────────────────────────────────────────────────────
 
 type FileStore struct {
-	mu      sync.RWMutex
-	dataDir string
+	mu       sync.RWMutex
+	dataDir  string
 	versions map[string]int32
 }
 
 func NewFileStore(dataDir string) *FileStore {
-	os.MkdirAll(dataDir, 0755)
+	// Ensure the subdirectories exist to prevent panics during initial writes
+	os.MkdirAll(filepath.Join(dataDir, "input"), 0755)
+	os.MkdirAll(filepath.Join(dataDir, "output"), 0755)
+	
 	return &FileStore{
 		dataDir:  dataDir,
 		versions: make(map[string]int32),
 	}
 }
 
-func (fs *FileStore) path(name string) string {
-	return filepath.Join(fs.dataDir, name)
+func (fs *FileStore) resolveReadPath(name string) string {
+	outPath := filepath.Join(fs.dataDir, "output", name)
+	if _, err := os.Stat(outPath); err == nil {
+		return outPath
+	}
+	return filepath.Join(fs.dataDir, "input", name)
+}
+
+// pathForWrite ensures all new data is written to the 'output' directory
+func (fs *FileStore) pathForWrite(name string) string {
+	return filepath.Join(fs.dataDir, "output", name)
 }
 
 func (fs *FileStore) Write(name string, data []byte, version int32) {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
-	_ = os.WriteFile(fs.path(name), data, 0644)
+	_ = os.WriteFile(fs.pathForWrite(name), data, 0644)
 	fs.versions[name] = version
 }
 
 func (fs *FileStore) Read(name string) ([]byte, int32, bool) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
-	data, err := os.ReadFile(fs.path(name))
+	data, err := os.ReadFile(fs.resolveReadPath(name))
 	if err != nil {
 		return nil, 0, false
 	}
@@ -73,8 +85,14 @@ func (fs *FileStore) Read(name string) ([]byte, int32, bool) {
 func (fs *FileStore) Version(name string) (int32, bool) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
-	v, ok := fs.versions[name]
-	return v, ok
+	
+	// Ensure the file actually exists in either directory
+	if _, err := os.Stat(fs.resolveReadPath(name)); os.IsNotExist(err) {
+		return 0, false
+	}
+	
+	v := fs.versions[name]
+	return v, true
 }
 
 // ─── AFS gRPC service ─────────────────────────────────────────────────────────
@@ -198,9 +216,21 @@ func main() {
 	// --clean wipes persisted Raft state so stale terms from a previous run
 	// cannot cause spurious leader elections.
 	if *cleanFlag {
-		_ = os.RemoveAll(*dataFlag)
-		log.Printf("[server] cleaned data directory %s", *dataFlag)
+		logPath := filepath.Join(*dataFlag, "raft_log.json")
+		statePath := filepath.Join(*dataFlag, "raft_state.json")
+		outPath := filepath.Join(*dataFlag, "output")
+		
+		// 1. Delete Raft state files
+		_ = os.Remove(logPath)
+		_ = os.Remove(statePath)
+		
+		// 2. Wipe the entire output directory (removes term_check.txt, primes.txt, etc.)
+		_ = os.RemoveAll(outPath)
+		
+		log.Printf("[server] cleaned Raft state and output directory in %s", *dataFlag)
 	}
+	
+	// Ensure the base data directory exists
 	os.MkdirAll(*dataFlag, 0755)
 
 	store := NewFileStore(*dataFlag)
@@ -218,7 +248,10 @@ func main() {
 		log.Fatalf("listen %s: %v", listenAddr, err)
 	}
 
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(
+		grpc.MaxRecvMsgSize(256 * 1024 * 1024), // 256 MB
+		grpc.MaxSendMsgSize(256 * 1024 * 1024), // 256 MB
+	)
 
 	pb.RegisterAFSServer(grpcServer, &AFSService{store: store, raft: raftNode, self: *selfFlag})
 	pb.RegisterRaftServer(grpcServer, &RaftService{node: raftNode})

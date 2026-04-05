@@ -32,9 +32,9 @@ import (
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const (
-	heartbeatInterval    = 100 * time.Millisecond
-	electionTimeoutMin   = 400 * time.Millisecond
-	electionTimeoutMax   = 800 * time.Millisecond
+	heartbeatInterval    = 1 * time.Second       // Changed from 150ms
+	electionTimeoutMin   = 4 * time.Second       // Changed from 1500ms
+	electionTimeoutMax   = 5 * time.Second       // Changed from 3000ms
 )
 
 // ─── Role ─────────────────────────────────────────────────────────────────────
@@ -205,6 +205,10 @@ func (n *RaftNode) becomeFollower(term int64, leaderID string) {
 		n.savePersistentState()
 	}
 	// Reset the follower election timer.
+
+	if prevRole == Leader {
+		log.Printf("[raft %s] stepped down from Leader (term %d)", n.self, n.ps.CurrentTerm)
+	}
 	select {
 	case n.resetElectionC <- struct{}{}:
 	default:
@@ -233,7 +237,13 @@ func (n *RaftNode) peerClient(addr string) pb.RaftClient {
 	if c, ok := n.peerConns[addr]; ok {
 		return c
 	}
-	conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.Dial(addr, 
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithDefaultCallOptions(
+			grpc.MaxCallRecvMsgSize(256*1024*1024), // 256 MB
+			grpc.MaxCallSendMsgSize(256*1024*1024), // 256 MB
+		),
+	)
 	if err != nil {
 		return nil
 	}
@@ -602,17 +612,24 @@ func (n *RaftNode) AppendEntries(
 	}
 
 	// §5.3: append new entries, truncating on conflict.
+	logChanged := false
 	for _, entry := range req.Entries {
 		existing := n.entryAt(entry.Index)
 		if existing != nil && existing.Term != entry.Term {
 			// Delete this and all following entries.
 			n.log = n.log[:entry.Index]
+			logChanged = true
 		}
 		if entry.Index >= int64(len(n.log)) {
 			n.log = append(n.log, entry)
+			logChanged = true
 		}
 	}
-	n.saveLog()
+	
+	// Only hammer the disk if we actually added or truncated entries!
+	if logChanged {
+		n.saveLog()
+	}
 
 	// §5.3: update commitIndex.
 	if req.LeaderCommit > n.commitIndex {
@@ -704,7 +721,7 @@ func (n *RaftNode) Submit(filename string, data []byte) (int32, error) {
 	n.broadcastAppendEntries()
 
 	// Poll until committed or we lose leadership.
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
 		n.mu.Lock()
 		committed := n.commitIndex >= commitTarget
