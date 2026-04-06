@@ -34,7 +34,6 @@ func fail(msg string)     { fmt.Printf("FAIL: %s\n", msg) }
 func info(msg string)     { fmt.Printf("INFO: %s\n", msg) }
 func warn(msg string)     { fmt.Printf("WARN: %s\n", msg) }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 func newClient(name string) *client.AFSClient {
 	cacheDir := fmt.Sprintf("/tmp/afs_%s", name)
@@ -44,7 +43,6 @@ func newClient(name string) *client.AFSClient {
 	return c
 }
 
-// dialNode opens a raw gRPC connection to a single node.
 func dialNode(addr string) (pb.AFSClient, *grpc.ClientConn, error) {
 	conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -53,8 +51,6 @@ func dialNode(addr string) (pb.AFSClient, *grpc.ClientConn, error) {
 	return pb.NewAFSClient(conn), conn, nil
 }
 
-// findLeader polls the cluster and returns the current Raft leader address.
-// It retries for up to `timeout`, which is useful right after a node failure.
 func findLeader(timeout time.Duration) (string, error) {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
@@ -79,7 +75,6 @@ func findLeader(timeout time.Duration) (string, error) {
 	return "", fmt.Errorf("no leader elected within %s", timeout)
 }
 
-// fetchFromNode fetches a file directly from a specific node (bypassing the client cache).
 func fetchFromNode(addr, filename string) ([]byte, error) {
 	afsC, conn, err := dialNode(addr)
 	if err != nil {
@@ -153,7 +148,6 @@ func scenario2WriteAndVerify() {
 	writer := newClient("writer1")
 	payload := fmt.Sprintf("raft-replicated-write ts=%d\n", time.Now().Unix())
 
-	// CHANGED: Use a unique filename so it doesn't conflict with Scenario 4
 	fd, err := writer.AFS_Open("scenario2_test.txt", os.O_CREATE|os.O_WRONLY|os.O_TRUNC)
 	must("Open scenario2_test.txt for write", err)
 	_, err = writer.AFS_Write(fd, []byte(payload))
@@ -167,7 +161,6 @@ func scenario2WriteAndVerify() {
 		if addr == leaderAddr {
 			continue
 		}
-		// CHANGED: Fetch the unique file
 		data, err := fetchFromNode(addr, "scenario2_test.txt")
 		if err != nil {
 			warn(fmt.Sprintf("follower %s FetchFile error: %v", addr, err))
@@ -203,7 +196,6 @@ func scenario3CacheHit() {
 	must("second close", c.AFS_Close(fd2))
 	elapsed := time.Since(start)
 
-	// A cache hit skips the streaming download so it should be much faster.
 	if elapsed < 100*time.Millisecond {
 		pass(fmt.Sprintf("cache hit confirmed — second open took only %v", elapsed))
 	} else {
@@ -253,7 +245,6 @@ func scenario4ConcurrentWrites() {
 		warn(e.Error())
 	}
 
-	// Verify both files landed on all nodes.
 	time.Sleep(1500 * time.Millisecond)
 	for _, filename := range []string{"primes.txt", "input_dataset_002.txt"} {
 		replicaOK := 0
@@ -300,7 +291,6 @@ func scenario5LeaderCrashDuringRead() {
 	successAfterFailover := false
 	info("reading in a tight loop — kill the leader NOW")
 
-	// Increased loop count to account for no sleeping
 	for i := 0; i < 200; i++ {
 		fmt.Printf("  attempt %d/200...\r", i+1)
 
@@ -313,7 +303,6 @@ func scenario5LeaderCrashDuringRead() {
 			fmt.Println()
 			info(fmt.Sprintf("read stream broken mid-flight (expected): %v", err))
 			
-			// The leader is dead. Wait for the cluster to elect a new one.
 			info("waiting for Raft to elect a new leader (takes 4-6 seconds)...")
 			newLeader, lerr := findLeader(15 * time.Second)
 			if lerr != nil {
@@ -334,7 +323,6 @@ func scenario5LeaderCrashDuringRead() {
 			break
 		}
 		
-		// NO SLEEP. We want the script hammering the server so the kill happens mid-read.
 	}
 
 	fmt.Println()
@@ -358,12 +346,10 @@ func scenario6ClientCrashDuringWrite() {
 	c1.AFS_Write(fd, []byte("partial write — client will crash before AFS_Close"))
 
 	info("SIMULATING CLIENT CRASH (no AFS_Close called — Raft never sees this data)")
-	// Wipe the cache without calling AFS_Close, so StoreFile is never sent.
 	os.RemoveAll("/tmp/afs_doomed_client")
 
 	time.Sleep(500 * time.Millisecond)
 
-	// A fresh client should NOT find the file (it was never committed to Raft).
 	c2 := newClient("verifier_client")
 	_, verifyErr := c2.AFS_Open("partial_test.txt", os.O_RDONLY)
 	if verifyErr != nil {
@@ -408,7 +394,6 @@ func scenario7LeaderFailureAndRecovery() {
 	}
 	pass("write committed by new Raft leader")
 
-	// Read back to confirm.
 	fd2, err := c.AFS_Open("primes.txt", os.O_RDONLY)
 	if err != nil {
 		fail(fmt.Sprintf("read-back after failover: %v", err))
@@ -419,7 +404,6 @@ func scenario7LeaderFailureAndRecovery() {
 	c.AFS_Close(fd2)
 	pass(fmt.Sprintf("read-back OK: %q", strings.TrimSpace(string(buf[:n]))))
 
-	// Verify the surviving follower also has the new data.
 	time.Sleep(1500 * time.Millisecond)
 	for _, addr := range allNodes {
 		if addr == newLeader {
@@ -427,7 +411,6 @@ func scenario7LeaderFailureAndRecovery() {
 		}
 		data, err := fetchFromNode(addr, "primes.txt")
 		if err != nil {
-			// Node may be the one we killed — skip.
 			info(fmt.Sprintf("node %s unreachable (may be the killed leader)", addr))
 			continue
 		}
@@ -450,7 +433,6 @@ func scenario8TermSafety() {
 	must("find initial leader", err)
 	info(fmt.Sprintf("initial leader: %s", leaderAddr))
 
-	// Read current term from any node.
 	afsC, conn, err := dialNode(leaderAddr)
 	must("dial leader", err)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -460,7 +442,6 @@ func scenario8TermSafety() {
 	must("GetPrimary", err)
 	info(fmt.Sprintf("cluster is healthy, leader confirmed at %s (IsPrimary=%v)", leaderAddr, info1.IsPrimary))
 
-	// Write a file, then immediately verify all nodes agree on the same version.
 	c := newClient("term_safety_client")
 	payload := fmt.Sprintf("term-safety-check ts=%d", time.Now().UnixNano())
 
@@ -472,7 +453,6 @@ func scenario8TermSafety() {
 
 	time.Sleep(1500 * time.Millisecond)
 
-	// All live nodes should return the same content.
 	var versions []string
 	for _, addr := range allNodes {
 		data, err := fetchFromNode(addr, "term_check.txt")
@@ -497,24 +477,20 @@ func scenario8TermSafety() {
 	}
 }
 
-// ─── main ─────────────────────────────────────────────────────────────────────
 
 func main() {
 	fmt.Println("AFS Raft Replication — Integration Test")
 	fmt.Printf("Cluster : %s\n", clusterAddrs)
 	fmt.Printf("Time    : %s\n", time.Now().Format(time.RFC3339))
 
-	// Automated scenarios — no manual intervention needed.
 	scenario1BasicRead()
 	scenario2WriteAndVerify()
 	scenario3CacheHit()
 	scenario4ConcurrentWrites()
 	scenario8TermSafety()
 
-	// Crash scenarios — require the user to kill nodes at the right moment.
 	fmt.Println("\n------------------------------------------------------------")
 	fmt.Print("Run crash/failover scenarios (5, 6 & 7)? [y/N] > ")
-	// fmt.Print("Run crash/failover scenarios (6 & 7)? [y/N] > ")
 	var choice string
 	fmt.Scanln(&choice)
 	if strings.ToLower(strings.TrimSpace(choice)) == "y" {

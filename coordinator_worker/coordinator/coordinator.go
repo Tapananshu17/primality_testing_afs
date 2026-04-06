@@ -25,7 +25,6 @@ import (
 	pb "primality_afs/proto"
 )
 
-// ─── Constants ───────────────────────────────────────────────────────────────
 
 const (
 	chunkSize    = 10000
@@ -42,7 +41,6 @@ const (
 	maxWriteRetries        = 5
 )
 
-// ─── Types ───────────────────────────────────────────────────────────────────
 
 type Stats struct {
 	InputFiles   int
@@ -76,7 +74,6 @@ type WorkerState struct {
 	Offset  int32 `json:"offset"`
 }
 
-// ─── Raft Leadership Helpers ─────────────────────────────────────────────────
 
 func discoverLeader(addrs []string) (string, error) {
 	deadline := time.Now().Add(leaderDiscoveryTimeout)
@@ -200,7 +197,6 @@ func writeToAFSWithRetry(allAddrs, cacheDir, outputFile string, flags int, data 
 	return fmt.Errorf("exceeded %d retries writing %s to AFS leader", maxWriteRetries, outputFile)
 }
 
-// ─── Snapshot & State Helpers ────────────────────────────────────────────────
 
 func compactRanges(ids []int32) []ChunkRange {
 	if len(ids) == 0 {
@@ -255,7 +251,6 @@ func takeSnapshot(
 			out.WriteString(fmt.Sprintf("%d\n", p))
 		}
 
-		// Use Raft-safe retry wrapper with O_APPEND
 		werr := writeToAFSWithRetry(afsAddrs, cacheDir, outputFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, out.Bytes())
 		if werr == nil {
 			primeMu.Lock()
@@ -292,7 +287,6 @@ func takeSnapshot(
 	}
 
 	jsonBytes, _ := json.MarshalIndent(snap, "", "  ")
-	// Use Raft-safe retry wrapper with O_TRUNC to overwrite snapshot file
 	serr := writeToAFSWithRetry(afsAddrs, cacheDir, snapshotFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, jsonBytes)
 	if serr == nil {
 		log.Printf("[SNAPSHOT] Saved (total_primes=%d, ranges=%d)", snap.TotalPrimes, len(snap.CompletedRanges))
@@ -359,7 +353,6 @@ func rebuildPrimeSet(afsClient *client.AFSClient, outputFile string) map[uint64]
 	return set
 }
 
-// ─── Worker Proxy ────────────────────────────────────────────────────────────
 
 func waitForWorkerRecovery(workerClient primepb.PrimeWorkerClient, workerID int) bool {
 	deadline := time.Now().Add(workerDeadTimeout)
@@ -410,7 +403,6 @@ func runWorkerProxy(
 	}
 }
 
-// ─── Main Run Coordinator ────────────────────────────────────────────────────
 
 func Run(
 	afsAddrs string,
@@ -422,7 +414,6 @@ func Run(
 ) (Stats, error) {
 	startTime := time.Now()
 
-	// 1. Discover Raft Leader and Connect
 	addrSlice := splitAddrs(afsAddrs)
 	if len(addrSlice) == 0 {
 		return Stats{}, fmt.Errorf("no AFS addresses provided")
@@ -439,7 +430,6 @@ func Run(
 		return Stats{}, fmt.Errorf("AFS connect: %w", err)
 	}
 
-	// 2. Recovery State Setup
 	var completedRanges []ChunkRange
 	fileChunkMap := make(map[string][]int32)
 	startChunkID := 0
@@ -458,7 +448,6 @@ func Run(
 		}
 	}
 
-	// 3. Connect to Workers
 	var conns []*grpc.ClientConn
 	var grpcClients []primepb.PrimeWorkerClient
 
@@ -480,7 +469,6 @@ func Run(
 		return Stats{}, fmt.Errorf("no workers available")
 	}
 
-	// 4. Setup Channels and Sync Primitives
 	jobs := make(chan Job, numWorkers*4)
 	requeueCh := make(chan Job, numWorkers*4)
 	results := make(chan *primepb.PrimeResult, numWorkers*1000)
@@ -502,7 +490,6 @@ func Run(
 	snapCtx, snapCancel := context.WithCancel(context.Background())
 	defer snapCancel()
 
-	// Ingestion loop
 	ingestWg.Add(1)
 	go func() {
 		defer ingestWg.Done()
@@ -526,7 +513,6 @@ func Run(
 		}
 	}()
 
-	// Retry loop
 	forwarderWg.Add(1)
 	go func() {
 		defer forwarderWg.Done()
@@ -535,7 +521,6 @@ func Run(
 		}
 	}()
 
-	// Periodic Snapshot loop
 	go func() {
 		ticker := time.NewTicker(snapInterval)
 		defer ticker.Stop()
@@ -556,13 +541,11 @@ func Run(
 		}
 	}()
 
-	// Start Worker Proxies
 	for i, c := range grpcClients {
 		proxyWg.Add(1)
 		go runWorkerProxy(c, i+1, jobs, requeueCh, results, &chunkWg, &proxyWg, &activeWorkers)
 	}
 
-	// Watchdog
 	watchdogDone := make(chan struct{})
 	go func() {
 		defer close(watchdogDone)
@@ -583,7 +566,6 @@ func Run(
 		}
 	}()
 
-	// 5. Read inputs and generate jobs
 	totalNumbers := 0
 	chunkID := 0
 
@@ -653,7 +635,6 @@ func Run(
 		flush()
 	}
 
-	// 6. Tear down
 	chunkWg.Wait()
 	snapCancel()
 	<-watchdogDone
@@ -664,7 +645,6 @@ func Run(
 	close(results)
 	ingestWg.Wait()
 
-	// 7. Final Snapshot
 	snapshotMutex.Lock()
 	takeSnapshot(
 		afsAddrs, cacheDir, grpcClients, outputFile,

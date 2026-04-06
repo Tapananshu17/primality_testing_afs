@@ -1,15 +1,3 @@
-// server/raft.go
-//
-// Standard Raft implementation for the AFS server.
-//
-// Roles    : Follower → Candidate → Leader (and back).
-// Log      : In-memory slice of LogEntry; persisted to <dataDir>/raft_log.json
-//            on every append so the node can recover after a crash.
-// State    : currentTerm + votedFor persisted to <dataDir>/raft_state.json.
-// Commits  : Once a log entry is committed (majority ACK), applyFn is called to
-//            materialise the write into the file store.
-// Timeouts : Election timeout 150–300 ms (randomised), heartbeat 50 ms.
-
 package main
 
 import (
@@ -29,15 +17,13 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// ─── Constants ────────────────────────────────────────────────────────────────
 
 const (
-	heartbeatInterval    = 1 * time.Second       // Changed from 150ms
-	electionTimeoutMin   = 4 * time.Second       // Changed from 1500ms
-	electionTimeoutMax   = 5 * time.Second       // Changed from 3000ms
+	heartbeatInterval    = 1 * time.Second       
+	electionTimeoutMin   = 4 * time.Second       
+	electionTimeoutMax   = 5 * time.Second       
 )
 
-// ─── Role ─────────────────────────────────────────────────────────────────────
 
 type Role int
 
@@ -51,53 +37,41 @@ func (r Role) String() string {
 	return [...]string{"Follower", "Candidate", "Leader"}[r]
 }
 
-// ─── Persistent state (written to disk on every change) ───────────────────────
 
 type persistentState struct {
 	CurrentTerm int64  `json:"current_term"`
-	VotedFor    string `json:"voted_for"` // "" means none
+	VotedFor    string `json:"voted_for"` 
 }
 
-// ─── RaftNode ─────────────────────────────────────────────────────────────────
-
-// ApplyFn is called (under no lock) when a log entry is committed.
-// It must write the file data to the local store and return the new version.
 type ApplyFn func(filename string, data []byte, version int32)
 
 type RaftNode struct {
 	mu sync.Mutex
 
-	// Identity
-	self    string   // "host:port" of this node
-	peers   []string // addresses of all OTHER nodes
+	self    string   
+	peers   []string 
 
-	// Persistent
 	ps      persistentState
-	log     []*pb.LogEntry // log[0] is a sentinel (index=0, term=0)
+	log     []*pb.LogEntry 
 	dataDir string
 
-	// Volatile (all nodes)
 	commitIndex int64
 	lastApplied int64
 	role        Role
-	leaderID    string // known leader address (may be "")
+	leaderID    string 
 
-	// Volatile (leader only) — reset on election
-	nextIndex  map[string]int64 // peer → next log index to send
-	matchIndex map[string]int64 // peer → highest replicated index
+	nextIndex  map[string]int64 
+	matchIndex map[string]int64 
 
-	// Channels / timers
-	resetElectionC chan struct{} // signal to reset election timer
-	stepDownC      chan struct{} // signal leader to step down
+	resetElectionC chan struct{} 
+	stepDownC      chan struct{} 
 
 	applyFn ApplyFn
 
-	// gRPC connections to peers (lazy, cached)
 	peerConns   map[string]pb.RaftClient
 	peerConnsMu sync.Mutex
 }
 
-// ─── Constructor ──────────────────────────────────────────────────────────────
 
 func NewRaftNode(self string, peers []string, dataDir string, applyFn ApplyFn) *RaftNode {
 	n := &RaftNode{
@@ -110,7 +84,6 @@ func NewRaftNode(self string, peers []string, dataDir string, applyFn ApplyFn) *
 		peerConns:      make(map[string]pb.RaftClient),
 	}
 
-	// Sentinel entry so that real entries start at index 1.
 	n.log = []*pb.LogEntry{{Term: 0, Index: 0}}
 
 	n.loadPersistentState()
@@ -119,7 +92,6 @@ func NewRaftNode(self string, peers []string, dataDir string, applyFn ApplyFn) *
 	return n
 }
 
-// ─── Persistence ──────────────────────────────────────────────────────────────
 
 func (n *RaftNode) statePath() string { return filepath.Join(n.dataDir, "raft_state.json") }
 func (n *RaftNode) logPath() string   { return filepath.Join(n.dataDir, "raft_log.json") }
@@ -154,15 +126,12 @@ func (n *RaftNode) loadLog() {
 	if len(entries) > 0 {
 		n.log = entries
 	}
-	// Rehydrate commitIndex / lastApplied from the log length; the apply loop
-	// will re-apply committed entries after a restart.
+
 	if len(n.log) > 1 {
 		n.commitIndex = n.log[len(n.log)-1].Index
-		// We'll re-apply from 1 when Run() starts.
 	}
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 func (n *RaftNode) lastLogIndex() int64 {
 	return n.log[len(n.log)-1].Index
@@ -172,8 +141,6 @@ func (n *RaftNode) lastLogTerm() int64 {
 	return n.log[len(n.log)-1].Term
 }
 
-// entryAt returns the log entry at logical index idx (1-based).
-// Returns nil if out of range.
 func (n *RaftNode) entryAt(idx int64) *pb.LogEntry {
 	if idx < 0 || int(idx) >= len(n.log) {
 		return nil
@@ -187,14 +154,12 @@ func (n *RaftNode) isLeader() bool {
 	return n.role == Leader
 }
 
-// LeaderAddr returns the known leader address (may be empty).
 func (n *RaftNode) LeaderAddr() string {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	return n.leaderID
 }
 
-// becomeFollower — must be called with n.mu held.
 func (n *RaftNode) becomeFollower(term int64, leaderID string) {
 	prevRole := n.role
 	n.role = Follower
@@ -204,7 +169,6 @@ func (n *RaftNode) becomeFollower(term int64, leaderID string) {
 		n.ps.VotedFor = ""
 		n.savePersistentState()
 	}
-	// Reset the follower election timer.
 
 	if prevRole == Leader {
 		log.Printf("[raft %s] stepped down from Leader (term %d)", n.self, n.ps.CurrentTerm)
@@ -213,7 +177,6 @@ func (n *RaftNode) becomeFollower(term int64, leaderID string) {
 	case n.resetElectionC <- struct{}{}:
 	default:
 	}
-	// If we were leader, kick the runLeader loop out immediately.
 	if prevRole == Leader {
 		select {
 		case n.stepDownC <- struct{}{}:
@@ -222,13 +185,11 @@ func (n *RaftNode) becomeFollower(term int64, leaderID string) {
 	}
 }
 
-// randomElectionTimeout returns a duration in [min, max).
 func randomElectionTimeout() time.Duration {
 	span := int64(electionTimeoutMax - electionTimeoutMin)
 	return electionTimeoutMin + time.Duration(rand.Int63n(span))
 }
 
-// ─── peer gRPC dial (cached) ──────────────────────────────────────────────────
 
 func (n *RaftNode) peerClient(addr string) pb.RaftClient {
 	n.peerConnsMu.Lock()
@@ -240,8 +201,8 @@ func (n *RaftNode) peerClient(addr string) pb.RaftClient {
 	conn, err := grpc.Dial(addr, 
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithDefaultCallOptions(
-			grpc.MaxCallRecvMsgSize(256*1024*1024), // 256 MB
-			grpc.MaxCallSendMsgSize(256*1024*1024), // 256 MB
+			grpc.MaxCallRecvMsgSize(256*1024*1024), 
+			grpc.MaxCallSendMsgSize(256*1024*1024), 
 		),
 	)
 	if err != nil {
@@ -252,10 +213,8 @@ func (n *RaftNode) peerClient(addr string) pb.RaftClient {
 	return c
 }
 
-// ─── Run — main Raft goroutine ────────────────────────────────────────────────
 
 func (n *RaftNode) Run() {
-	// Re-apply any committed log entries that survived a restart.
 	n.mu.Lock()
 	toApply := n.commitIndex
 	n.mu.Unlock()
@@ -287,7 +246,6 @@ func (n *RaftNode) Run() {
 	}
 }
 
-// ─── Follower loop ────────────────────────────────────────────────────────────
 
 func (n *RaftNode) runFollower() {
 	timeout := randomElectionTimeout()
@@ -316,7 +274,6 @@ func (n *RaftNode) runFollower() {
 	}
 }
 
-// ─── Candidate loop ───────────────────────────────────────────────────────────
 
 func (n *RaftNode) runCandidate() {
 	n.mu.Lock()
@@ -331,7 +288,7 @@ func (n *RaftNode) runCandidate() {
 
 	log.Printf("[raft %s] became Candidate (term %d)", n.self, term)
 
-	votes := 1 // vote for self
+	votes := 1 
 	needed := (len(peers)+1)/2 + 1
 
 	voteCh := make(chan bool, len(peers))
@@ -378,8 +335,6 @@ func (n *RaftNode) runCandidate() {
 				votes++
 				if votes >= needed {
 					n.mu.Lock()
-					// Only become leader if still a candidate in the same term.
-					// becomeFollower() may have concurrently demoted us.
 					if n.role == Candidate && n.ps.CurrentTerm == term {
 						n.role = Leader
 						n.leaderID = n.self
@@ -389,7 +344,6 @@ func (n *RaftNode) runCandidate() {
 							n.nextIndex[p] = n.lastLogIndex() + 1
 							n.matchIndex[p] = 0
 						}
-						// Include self so maybeAdvanceCommit quorum counts correctly.
 						n.matchIndex[n.self] = n.lastLogIndex()
 						log.Printf("[raft %s] became Leader (term %d)", n.self, term)
 					}
@@ -398,24 +352,19 @@ func (n *RaftNode) runCandidate() {
 				}
 			}
 		case <-timer.C:
-			// Election timed out — stay Candidate, outer loop restarts.
 			return
 		case <-n.resetElectionC:
-			// Higher term seen — stepped down to Follower.
 			return
 		}
 	}
-	// All responses in but no majority yet — wait out the remainder of the timer.
 	select {
 	case <-timer.C:
 	case <-n.resetElectionC:
 	}
 }
 
-// ─── Leader loop ─────────────────────────────────────────────────────────────
 
 func (n *RaftNode) runLeader() {
-	// Send immediate heartbeat on becoming leader.
 	n.broadcastAppendEntries()
 
 	ticker := time.NewTicker(heartbeatInterval)
@@ -438,7 +387,6 @@ func (n *RaftNode) runLeader() {
 	}
 }
 
-// ─── AppendEntries broadcast (leader → followers) ─────────────────────────────
 
 func (n *RaftNode) broadcastAppendEntries() {
 	n.mu.Lock()
@@ -465,7 +413,6 @@ func (n *RaftNode) sendAppendEntries(peer string, term int64) {
 		prevTerm = e.Term
 	}
 
-	// Collect entries to send.
 	var entries []*pb.LogEntry
 	for i := nextIdx; i < int64(len(n.log)); i++ {
 		entries = append(entries, n.log[i])
@@ -520,7 +467,6 @@ func (n *RaftNode) sendAppendEntries(peer string, term int64) {
 		}
 		n.maybeAdvanceCommit()
 	} else {
-		// Back-track using conflict hint.
 		if resp.ConflictIndex > 0 {
 			n.nextIndex[peer] = resp.ConflictIndex
 		} else if n.nextIndex[peer] > 1 {
@@ -529,8 +475,6 @@ func (n *RaftNode) sendAppendEntries(peer string, term int64) {
 	}
 }
 
-// maybeAdvanceCommit advances commitIndex if a majority has replicated up to a
-// new index in the current term.  Must be called with n.mu held.
 func (n *RaftNode) maybeAdvanceCommit() {
 	clusterSize := len(n.peers) + 1
 	for idx := n.lastLogIndex(); idx > n.commitIndex; idx-- {
@@ -552,7 +496,6 @@ func (n *RaftNode) maybeAdvanceCommit() {
 	}
 }
 
-// applyCommitted applies all newly committed entries.
 func (n *RaftNode) applyCommitted() {
 	for {
 		n.mu.Lock()
@@ -570,9 +513,6 @@ func (n *RaftNode) applyCommitted() {
 	}
 }
 
-// ─── Raft gRPC server handlers ────────────────────────────────────────────────
-
-// AppendEntries implements pb.RaftServer.
 func (n *RaftNode) AppendEntries(
 	_ context.Context, req *pb.AppendEntriesRequest,
 ) (*pb.AppendEntriesResponse, error) {
@@ -580,24 +520,19 @@ func (n *RaftNode) AppendEntries(
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
-	// §5.1: reply false if term < currentTerm.
 	if req.Term < n.ps.CurrentTerm {
 		return &pb.AppendEntriesResponse{Term: n.ps.CurrentTerm, Success: false}, nil
 	}
 
-	// Valid leader message — become/stay follower.
 	n.becomeFollower(req.Term, req.LeaderId)
 
-	// §5.3: reply false if log doesn't contain entry at prevLogIndex with prevLogTerm.
 	if req.PrevLogIndex > 0 {
 		prev := n.entryAt(req.PrevLogIndex)
 		if prev == nil || prev.Term != req.PrevLogTerm {
-			// Compute conflict hint.
 			conflictIdx := req.PrevLogIndex
 			var conflictTerm int64
 			if prev != nil {
 				conflictTerm = prev.Term
-				// Walk back to find first entry of that term.
 				for conflictIdx > 1 && n.log[conflictIdx-1].Term == conflictTerm {
 					conflictIdx--
 				}
@@ -611,12 +546,10 @@ func (n *RaftNode) AppendEntries(
 		}
 	}
 
-	// §5.3: append new entries, truncating on conflict.
 	logChanged := false
 	for _, entry := range req.Entries {
 		existing := n.entryAt(entry.Index)
 		if existing != nil && existing.Term != entry.Term {
-			// Delete this and all following entries.
 			n.log = n.log[:entry.Index]
 			logChanged = true
 		}
@@ -626,12 +559,10 @@ func (n *RaftNode) AppendEntries(
 		}
 	}
 	
-	// Only hammer the disk if we actually added or truncated entries!
 	if logChanged {
 		n.saveLog()
 	}
 
-	// §5.3: update commitIndex.
 	if req.LeaderCommit > n.commitIndex {
 		last := n.lastLogIndex()
 		if req.LeaderCommit < last {
@@ -645,7 +576,6 @@ func (n *RaftNode) AppendEntries(
 	return &pb.AppendEntriesResponse{Term: n.ps.CurrentTerm, Success: true}, nil
 }
 
-// RequestVote implements pb.RaftServer.
 func (n *RaftNode) RequestVote(
 	_ context.Context, req *pb.RequestVoteRequest,
 ) (*pb.RequestVoteResponse, error) {
@@ -663,8 +593,6 @@ func (n *RaftNode) RequestVote(
 		n.becomeFollower(req.Term, "")
 	}
 
-	// §5.2 / §5.4: grant vote if we haven't voted yet (or voted for this candidate)
-	// AND candidate's log is at least as up-to-date as ours.
 	alreadyVoted := n.ps.VotedFor != "" && n.ps.VotedFor != req.CandidateId
 	logOK := req.LastLogTerm > n.lastLogTerm() ||
 		(req.LastLogTerm == n.lastLogTerm() && req.LastLogIndex >= n.lastLogIndex())
@@ -676,7 +604,6 @@ func (n *RaftNode) RequestVote(
 	n.ps.VotedFor = req.CandidateId
 	n.savePersistentState()
 
-	// Reset election timer — we just heard from a valid candidate.
 	select {
 	case n.resetElectionC <- struct{}{}:
 	default:
@@ -685,10 +612,7 @@ func (n *RaftNode) RequestVote(
 	return &pb.RequestVoteResponse{Term: n.ps.CurrentTerm, VoteGranted: true}, nil
 }
 
-// ─── Client-command entry point (used by the AFS StoreFile handler) ──────────
 
-// Submit appends a new command to the leader's log and blocks until it is
-// committed (or returns an error if this node is not the leader).
 func (n *RaftNode) Submit(filename string, data []byte) (int32, error) {
 	n.mu.Lock()
 
@@ -699,9 +623,7 @@ func (n *RaftNode) Submit(filename string, data []byte) (int32, error) {
 		return 0, status.Error(codes.FailedPrecondition, msg)
 	}
 
-	// Assign version = previous version of this file + 1.
-	// (Simple approach: version = log length, guaranteed monotonically increasing.)
-	version := int32(len(n.log)) // 1-based since log[0] is sentinel
+	version := int32(len(n.log)) 
 	entry := &pb.LogEntry{
 		Term:     n.ps.CurrentTerm,
 		Index:    int64(len(n.log)),
@@ -711,16 +633,13 @@ func (n *RaftNode) Submit(filename string, data []byte) (int32, error) {
 	}
 	n.log = append(n.log, entry)
 	n.saveLog()
-	// Update own matchIndex.
 	n.matchIndex[n.self] = entry.Index
 	commitTarget := entry.Index
 
 	n.mu.Unlock()
 
-	// Trigger immediate replication.
 	n.broadcastAppendEntries()
 
-	// Poll until committed or we lose leadership.
 	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
 		n.mu.Lock()

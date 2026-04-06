@@ -1,19 +1,11 @@
 #!/bin/bash
 # test_01_normal.sh
-#
-# TEST 01: Happy Path
-#
-# Verifies that the full system works end-to-end:
-#   • 3-node Raft AFS cluster boots and elects a leader
-#   • 3 prime-checking workers process all input chunks
-#   • Coordinator writes primes.txt to AFS via the Raft leader
-#   • primes.txt is readable back from AFS
+
 
 set -euo pipefail
 
 echo "=== TEST 01: The Happy Path ==="
 
-# ── Config ────────────────────────────────────────────────────────────────────
 AFS_NODE1="localhost:50051"
 AFS_NODE2="localhost:50052"
 AFS_NODE3="localhost:50053"
@@ -27,20 +19,15 @@ NUM_WORKERS=3
 BASE_WORKER_PORT=6000
 WORKER_ADDRS=""
 
-# ── 1. Nuclear cleanup ────────────────────────────────────────────────────────
 echo "--- Cleaning up previous state ---"
-# Kill the go run commands
 pkill -f "go run ./server"      || true
 pkill -f "mode=worker"          || true
 pkill -f "mode=coordinator"     || true
 
-# Aggressively kill the compiled child processes holding the ports
 fuser -k 50051/tcp 50052/tcp 50053/tcp 2>/dev/null || true
 fuser -k 6001/tcp 6002/tcp 6003/tcp 2>/dev/null || true
 sleep 1
-# ── 2. Start Raft AFS cluster with --clean to wipe stale Raft state ──────────
-# --clean removes raft_log.json, raft_state.json, and the output/ directory on
-# each node so a prior test run's committed term cannot skew this election.
+
 echo "--- Starting 3-node Raft AFS cluster (clean) ---"
 
 go run ./server \
@@ -58,7 +45,6 @@ go run ./server \
 echo "Waiting for Raft leader election (5s)..."
 sleep 5
 
-# ── 3. Start workers ──────────────────────────────────────────────────────────
 echo "--- Starting $NUM_WORKERS workers ---"
 
 for i in $(seq 1 $NUM_WORKERS); do
@@ -75,7 +61,6 @@ done
 sleep 2
 echo "Workers started on: $WORKER_ADDRS"
 
-# ── 4. Resolve input files ────────────────────────────────────────────────────
 INPUT_FILES=$(ls "$DATA1/input/input_dataset_"*.txt 2>/dev/null \
     | xargs -n1 basename \
     | tr '\n' ',' \
@@ -88,7 +73,6 @@ fi
 
 echo "Input files: $INPUT_FILES"
 
-# ── 5. Run coordinator (foreground — blocks until done) ───────────────────────
 echo "--- Running coordinator ---"
 go run coordinator_worker/main.go --mode=coordinator \
     --afs="$AFS_ADDRS" \
@@ -96,11 +80,7 @@ go run coordinator_worker/main.go --mode=coordinator \
     --output="primes.txt" \
     --workers="$WORKER_ADDRS"
 
-# ── 6. Validate ───────────────────────────────────────────────────────────────
-# In Raft, once the coordinator's StoreFile is committed, the entry is applied
-# to every node.  We check the leader's data directory (server1 is most likely
-# to be leader after a clean boot, but any node's output dir will do once Raft
-# has applied the entry).
+
 echo "=== Validating Output ==="
 
 PRIME_FILE=""
@@ -119,5 +99,4 @@ else
     exit 1
 fi
 
-# ── 7. Cleanup ────────────────────────────────────────────────────────────────
 trap 'pkill -f "go run ./server" || true; pkill -f "mode=worker" || true' EXIT

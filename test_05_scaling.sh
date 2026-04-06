@@ -1,16 +1,11 @@
 #!/bin/bash
 # test_05_scaling.sh
-#
-# TEST 05: Throughput Scaling Benchmark
-#
-# Verifies that adding more workers decreases the time taken to process the
-# dataset. Runs the coordinator with 1, 2, 4, and 8 workers and prints a table.
+
 
 set -euo pipefail
 
 echo "=== TEST 05: Throughput Scaling Benchmark ==="
 
-# ── Config ────────────────────────────────────────────────────────────────────
 AFS_NODE1="localhost:50051"
 AFS_NODE2="localhost:50052"
 AFS_NODE3="localhost:50053"
@@ -20,11 +15,9 @@ DATA1="./afs_data/server1"
 DATA2="./afs_data/server2"
 DATA3="./afs_data/server3"
 
-# ── 1. Build binary ───────────────────────────────────────────────────────────
 echo "--- Compiling binary ---"
 go build -o prime_app coordinator_worker/main.go
 
-# ── 2. Resolve input files ────────────────────────────────────────────────────
 INPUT_FILES=$(ls "$DATA1/input/input_dataset_"*.txt 2>/dev/null \
     | xargs -n1 basename \
     | tr '\n' ',' \
@@ -42,11 +35,9 @@ for COUNT in "${WORKER_COUNTS[@]}"; do
     echo "---------------------------------------------------"
     echo "Running benchmark with $COUNT worker(s)..."
     
-    # ── 3. Clean state for a fresh benchmark ──────────────────────────────────
     pkill -f "go run ./server" || true
     pkill -f "prime_app"       || true
     
-    # Aggressively kill Raft and Worker ports (handles up to 8 workers)
     fuser -k 50051/tcp 50052/tcp 50053/tcp 2>/dev/null || true
     for p in $(seq 6001 6008); do fuser -k $p/tcp 2>/dev/null || true; done
     
@@ -54,9 +45,7 @@ for COUNT in "${WORKER_COUNTS[@]}"; do
     rm -f afs_data/server*/input/primes.txt
     rm -rf /tmp/afs*
     sleep 1
-    
-    # ── 4. Start Raft AFS cluster ─────────────────────────────────────────────
-    # Running servers in background and hiding their logs to keep benchmark output clean
+
     go run ./server --self="$AFS_NODE1" --peers="$AFS_NODE2,$AFS_NODE3" --data="$DATA1" --port=50051 --clean > /dev/null 2>&1 &
     go run ./server --self="$AFS_NODE2" --peers="$AFS_NODE1,$AFS_NODE3" --data="$DATA2" --port=50052 --clean > /dev/null 2>&1 &
     go run ./server --self="$AFS_NODE3" --peers="$AFS_NODE1,$AFS_NODE2" --data="$DATA3" --port=50053 --clean > /dev/null 2>&1 &
@@ -64,7 +53,6 @@ for COUNT in "${WORKER_COUNTS[@]}"; do
     echo "Waiting for Raft leader election (5s)..."
     sleep 5
     
-    # ── 5. Start Workers ──────────────────────────────────────────────────────
     BASE_PORT=6000
     WORKER_ADDRS=""
     for i in $(seq 1 $COUNT); do
@@ -78,20 +66,17 @@ for COUNT in "${WORKER_COUNTS[@]}"; do
     done
     sleep 2 
 
-    # ── 6. Run Coordinator ────────────────────────────────────────────────────
-    # Run the coordinator in FOREGROUND and capture output to a file
     ./prime_app --mode=coordinator \
         --afs="$AFS_ADDRS" \
         --inputs="$INPUT_FILES" \
         --output="primes.txt" \
         --workers="$WORKER_ADDRS" > bench_output.txt 2>&1
         
-    # Extract the "Time taken" using grep and awk
     TIME_TAKEN=$(grep "Time taken" bench_output.txt | awk -F': ' '{print $2}' | tr -d '[:space:]')
     
     if [ -z "$TIME_TAKEN" ]; then
         TIME_TAKEN="FAILED"
-        echo "⚠️ Benchmark failed! Dumping coordinator log:"
+        echo " Benchmark failed! Dumping coordinator log:"
         cat bench_output.txt
     fi
     
@@ -99,7 +84,6 @@ for COUNT in "${WORKER_COUNTS[@]}"; do
     RESULTS+=("$COUNT Workers | $TIME_TAKEN")
 done
 
-# ── 7. Final Report ───────────────────────────────────────────────────────────
 echo ""
 echo "====================================="
 echo "      FINAL SCALING BENCHMARK        "
@@ -109,6 +93,5 @@ for res in "${RESULTS[@]}"; do
 done
 echo "====================================="
 
-# ── 8. Cleanup ────────────────────────────────────────────────────────────────
 rm -f bench_output.txt
 trap 'pkill -f "go run ./server" || true; pkill -f "prime_app" || true; rm -f prime_app' EXIT

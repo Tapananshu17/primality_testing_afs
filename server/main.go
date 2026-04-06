@@ -1,16 +1,3 @@
-// server/main.go
-//
-// AFS server node.  Each node runs:
-//   • An AFS gRPC service  — serves clients (FetchFile, StoreFile, TestAuth, GetPrimary)
-//   • A Raft gRPC service  — inter-node consensus (AppendEntries, RequestVote)
-//
-// Usage:
-//   go run ./server \
-//     --self   localhost:50051 \
-//     --peers  localhost:50052,localhost:50053 \
-//     --data   /tmp/afs_node1 \
-//     --port   50051
-
 package main
 
 import (
@@ -33,7 +20,6 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// ─── File Store ───────────────────────────────────────────────────────────────
 
 type FileStore struct {
 	mu       sync.RWMutex
@@ -42,7 +28,6 @@ type FileStore struct {
 }
 
 func NewFileStore(dataDir string) *FileStore {
-	// Ensure the subdirectories exist to prevent panics during initial writes
 	os.MkdirAll(filepath.Join(dataDir, "input"), 0755)
 	os.MkdirAll(filepath.Join(dataDir, "output"), 0755)
 	
@@ -60,7 +45,6 @@ func (fs *FileStore) resolveReadPath(name string) string {
 	return filepath.Join(fs.dataDir, "input", name)
 }
 
-// pathForWrite ensures all new data is written to the 'output' directory
 func (fs *FileStore) pathForWrite(name string) string {
 	return filepath.Join(fs.dataDir, "output", name)
 }
@@ -86,7 +70,6 @@ func (fs *FileStore) Version(name string) (int32, bool) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
 	
-	// Ensure the file actually exists in either directory
 	if _, err := os.Stat(fs.resolveReadPath(name)); os.IsNotExist(err) {
 		return 0, false
 	}
@@ -95,7 +78,6 @@ func (fs *FileStore) Version(name string) (int32, bool) {
 	return v, true
 }
 
-// ─── AFS gRPC service ─────────────────────────────────────────────────────────
 
 type AFSService struct {
 	pb.UnimplementedAFSServer
@@ -183,7 +165,6 @@ func (s *AFSService) StoreFile(stream pb.AFS_StoreFileServer) error {
 	return stream.SendAndClose(&pb.StoreResponse{Success: true, NewVersion: version})
 }
 
-// ─── Raft gRPC service (thin wrapper delegating to RaftNode) ──────────────────
 
 type RaftService struct {
 	pb.UnimplementedRaftServer
@@ -198,7 +179,6 @@ func (rs *RaftService) RequestVote(ctx context.Context, req *pb.RequestVoteReque
 	return rs.node.RequestVote(ctx, req)
 }
 
-// ─── main ─────────────────────────────────────────────────────────────────────
 
 func main() {
 	selfFlag  := flag.String("self",  "localhost:50051", "this node's address (host:port)")
@@ -213,29 +193,23 @@ func main() {
 
 	log.Printf("[server] self=%s  peers=%v  data=%s", *selfFlag, peers, *dataFlag)
 
-	// --clean wipes persisted Raft state so stale terms from a previous run
-	// cannot cause spurious leader elections.
 	if *cleanFlag {
 		logPath := filepath.Join(*dataFlag, "raft_log.json")
 		statePath := filepath.Join(*dataFlag, "raft_state.json")
 		outPath := filepath.Join(*dataFlag, "output")
 		
-		// 1. Delete Raft state files
 		_ = os.Remove(logPath)
 		_ = os.Remove(statePath)
 		
-		// 2. Wipe the entire output directory (removes term_check.txt, primes.txt, etc.)
 		_ = os.RemoveAll(outPath)
 		
 		log.Printf("[server] cleaned Raft state and output directory in %s", *dataFlag)
 	}
 	
-	// Ensure the base data directory exists
 	os.MkdirAll(*dataFlag, 0755)
 
 	store := NewFileStore(*dataFlag)
 
-	// The apply function is called by Raft once an entry is committed.
 	applyFn := func(filename string, data []byte, version int32) {
 		store.Write(filename, data, version)
 		log.Printf("[server] applied: %s v%d (%d bytes)", filename, version, len(data))
@@ -249,15 +223,13 @@ func main() {
 	}
 
 	grpcServer := grpc.NewServer(
-		grpc.MaxRecvMsgSize(256 * 1024 * 1024), // 256 MB
-		grpc.MaxSendMsgSize(256 * 1024 * 1024), // 256 MB
+		grpc.MaxRecvMsgSize(256 * 1024 * 1024), 
+		grpc.MaxSendMsgSize(256 * 1024 * 1024), 
 	)
 
 	pb.RegisterAFSServer(grpcServer, &AFSService{store: store, raft: raftNode, self: *selfFlag})
 	pb.RegisterRaftServer(grpcServer, &RaftService{node: raftNode})
 
-	// Start gRPC server BEFORE starting Raft so our port is open and we can
-	// respond to RequestVote / AppendEntries from peers immediately.
 	go func() {
 		log.Printf("[server] listening on %s", listenAddr)
 		if err := grpcServer.Serve(lis); err != nil {
@@ -265,17 +237,12 @@ func main() {
 		}
 	}()
 
-	// Brief grace period so all nodes in the cluster can open their ports
-	// before the first election fires.  This prevents a node that starts
-	// slightly later from loading a high current_term from disk and winning
-	// an instant uncontested election against peers that aren't listening yet.
 	time.Sleep(200 * time.Millisecond)
 
-	raftNode.Run() // blocks forever
+	raftNode.Run() 
 
 }
 
-// parsePeers splits the peers flag, removing the self address if present.
 func parsePeers(peersFlag, self string) []string {
 	var result []string
 	scanner := bufio.NewScanner(strings.NewReader(peersFlag))
