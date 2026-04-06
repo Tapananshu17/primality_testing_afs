@@ -1,17 +1,23 @@
-// server/main.go  –  Primary AFS server
+// server/main.go
 //
-// Start as:
-//   go run ./server  \
-//       --port :50051 \
-//       --backups localhost:50052,localhost:50053 \
-//       --data  ./afs_data/server1
+// AFS server node.  Each node runs:
+//   • An AFS gRPC service  — serves clients (FetchFile, StoreFile, TestAuth, GetPrimary)
+//   • A Raft gRPC service  — inter-node consensus (AppendEntries, RequestVote)
+//
+// Usage:
+//   go run ./server \
+//     --self   localhost:50051 \
+//     --peers  localhost:50052,localhost:50053 \
+//     --data   /tmp/afs_node1 \
+//     --port   50051
 
 package main
 
 import (
+	"bufio"
 	"context"
-	"encoding/json"
 	"flag"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -21,192 +27,135 @@ import (
 	"sync"
 	"time"
 
+	pb "primality_afs/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
-
-	pb "primality_afs/proto"
 )
 
-const (
-	chunkSize    = 64 * 1024
-	metaFile     = "server_metadata.json"
-	heartbeatInt = 1 * time.Second
-)
+// ─── File Store ───────────────────────────────────────────────────────────────
 
-type primaryServer struct {
-	pb.UnimplementedAFSServer
-
+type FileStore struct {
 	mu       sync.RWMutex
-	metadata map[string]int32
-
-	dataDir   string
-	inputDir  string
-	outputDir string
-
-	selfAddr    string
-	backupAddrs []string
-	backups     []pb.ReplicaClient
+	dataDir  string
+	versions map[string]int32
 }
 
-func newPrimaryServer(selfAddr string, backupAddrs []string, dataDir string) *primaryServer {
-	s := &primaryServer{
-		metadata:    make(map[string]int32),
-		dataDir:     dataDir,
-		inputDir:    filepath.Join(dataDir, "input"),
-		outputDir:   filepath.Join(dataDir, "output"),
-		selfAddr:    selfAddr,
-		backupAddrs: backupAddrs,
-	}
-
-	os.MkdirAll(s.inputDir, 0755)
-	os.MkdirAll(s.outputDir, 0755)
-
-	s.loadMetadata()
-	s.connectToBackups()
-
-	return s
-}
-
-func (s *primaryServer) loadMetadata() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	metaPath := filepath.Join(s.outputDir, metaFile)
-	if data, err := os.ReadFile(metaPath); err == nil {
-		json.Unmarshal(data, &s.metadata)
-		return
-	}
-
-	entries, _ := os.ReadDir(s.inputDir)
-	for _, e := range entries {
-		if !e.IsDir() {
-			s.metadata[e.Name()] = 1
-		}
-	}
-
-	s.saveMetadataLocked()
-}
-
-func (s *primaryServer) saveMetadataLocked() {
-	metaPath := filepath.Join(s.outputDir, metaFile)
-	data, _ := json.MarshalIndent(s.metadata, "", "  ")
-	os.WriteFile(metaPath, data, 0644)
-}
-
-func (s *primaryServer) connectToBackups() {
-	for _, addr := range s.backupAddrs {
-		conn, err := grpc.Dial(addr,
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-		)
-		if err != nil {
-			log.Printf("[primary] WARNING: could not initiate connection to backup %s: %v", addr, err)
-			s.backups = append(s.backups, nil)
-			continue
-		}
-
-		log.Printf("[primary] dial initiated for backup %s", addr)
-		s.backups = append(s.backups, pb.NewReplicaClient(conn))
+func NewFileStore(dataDir string) *FileStore {
+	// Ensure the subdirectories exist to prevent panics during initial writes
+	os.MkdirAll(filepath.Join(dataDir, "input"), 0755)
+	os.MkdirAll(filepath.Join(dataDir, "output"), 0755)
+	
+	return &FileStore{
+		dataDir:  dataDir,
+		versions: make(map[string]int32),
 	}
 }
 
-func (s *primaryServer) runHeartbeats() {
-	ticker := time.NewTicker(heartbeatInt)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		for i, stub := range s.backups {
-			if stub == nil {
-				continue
-			}
-
-			go func(i int, stub pb.ReplicaClient) {
-				ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-				defer cancel()
-
-				if _, err := stub.Heartbeat(ctx, &pb.HeartbeatRequest{
-					PrimaryAddr: s.selfAddr,
-					Term:        1,
-				}); err != nil {
-					log.Printf("[primary] heartbeat to backup[%d] failed: %v", i, err)
-				}
-			}(i, stub)
-		}
+func (fs *FileStore) resolveReadPath(name string) string {
+	outPath := filepath.Join(fs.dataDir, "output", name)
+	if _, err := os.Stat(outPath); err == nil {
+		return outPath
 	}
+	return filepath.Join(fs.dataDir, "input", name)
 }
 
-func (s *primaryServer) filePath(filename string) string {
-	base := filepath.Base(filename)
-	if base == "primes.txt" || strings.HasSuffix(base, ".json") {
-		return filepath.Join(s.outputDir, base)
+// pathForWrite ensures all new data is written to the 'output' directory
+func (fs *FileStore) pathForWrite(name string) string {
+	return filepath.Join(fs.dataDir, "output", name)
+}
+
+func (fs *FileStore) Write(name string, data []byte, version int32) {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	_ = os.WriteFile(fs.pathForWrite(name), data, 0644)
+	fs.versions[name] = version
+}
+
+func (fs *FileStore) Read(name string) ([]byte, int32, bool) {
+	fs.mu.RLock()
+	defer fs.mu.RUnlock()
+	data, err := os.ReadFile(fs.resolveReadPath(name))
+	if err != nil {
+		return nil, 0, false
 	}
-	return filepath.Join(s.inputDir, base)
+	return data, fs.versions[name], true
 }
 
-func (s *primaryServer) GetPrimary(_ context.Context, _ *pb.Empty) (*pb.PrimaryInfo, error) {
-	return &pb.PrimaryInfo{Address: s.selfAddr, IsPrimary: true}, nil
+func (fs *FileStore) Version(name string) (int32, bool) {
+	fs.mu.RLock()
+	defer fs.mu.RUnlock()
+	
+	// Ensure the file actually exists in either directory
+	if _, err := os.Stat(fs.resolveReadPath(name)); os.IsNotExist(err) {
+		return 0, false
+	}
+	
+	v := fs.versions[name]
+	return v, true
 }
 
-func (s *primaryServer) TestAuth(_ context.Context, req *pb.TestAuthRequest) (*pb.TestAuthResponse, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+// ─── AFS gRPC service ─────────────────────────────────────────────────────────
 
-	base := filepath.Base(req.Filename)
-	serverVer, exists := s.metadata[base]
-	if !exists {
+type AFSService struct {
+	pb.UnimplementedAFSServer
+	store *FileStore
+	raft  *RaftNode
+	self  string
+}
+
+const chunkSize = 64 * 1024
+
+func (s *AFSService) GetPrimary(_ context.Context, _ *pb.Empty) (*pb.PrimaryInfo, error) {
+	isLeader := s.raft.isLeader()
+	addr := s.self
+	if !isLeader {
+		addr = s.raft.LeaderAddr()
+	}
+	return &pb.PrimaryInfo{Address: addr, IsPrimary: isLeader}, nil
+}
+
+func (s *AFSService) TestAuth(_ context.Context, req *pb.TestAuthRequest) (*pb.TestAuthResponse, error) {
+	serverVer, ok := s.store.Version(req.Filename)
+	if !ok {
 		return &pb.TestAuthResponse{IsValid: false, ServerVersion: 0}, nil
 	}
-
 	return &pb.TestAuthResponse{
-		IsValid:       req.Version == serverVer,
+		IsValid:       serverVer == req.Version,
 		ServerVersion: serverVer,
 	}, nil
 }
 
-func (s *primaryServer) FetchFile(req *pb.FileRequest, stream pb.AFS_FetchFileServer) error {
-	base := filepath.Base(req.Filename)
-	path := s.filePath(base)
-
-	f, err := os.Open(path)
-	if err != nil {
-		return status.Errorf(codes.NotFound, "file not found: %s", base)
+func (s *AFSService) FetchFile(req *pb.FileRequest, stream pb.AFS_FetchFileServer) error {
+	data, version, ok := s.store.Read(req.Filename)
+	if !ok {
+		return status.Errorf(codes.NotFound, "file not found: %s", req.Filename)
 	}
-	defer f.Close()
 
-	s.mu.RLock()
-	version := s.metadata[base]
-	s.mu.RUnlock()
-
-	buf := make([]byte, chunkSize)
-	first := true
-
-	for {
-		n, err := f.Read(buf)
-		if err != nil && err != io.EOF {
+	for off := 0; off < len(data); off += chunkSize {
+		end := off + chunkSize
+		if end > len(data) {
+			end = len(data)
+		}
+		chunk := &pb.FileChunk{Content: data[off:end]}
+		if off == 0 {
+			chunk.Version = version
+		}
+		if err := stream.Send(chunk); err != nil {
 			return err
 		}
-		if n == 0 {
-			break
-		}
-
-		chunk := &pb.FileChunk{Content: buf[:n]}
-		if first {
-			chunk.Version = version
-			first = false
-		}
-
-		if sendErr := stream.Send(chunk); sendErr != nil {
-			return sendErr
-		}
 	}
-
 	return nil
 }
 
-func (s *primaryServer) StoreFile(stream pb.AFS_StoreFileServer) error {
+func (s *AFSService) StoreFile(stream pb.AFS_StoreFileServer) error {
+	if !s.raft.isLeader() {
+		leader := s.raft.LeaderAddr()
+		return status.Errorf(codes.FailedPrecondition, "not primary; redirect to %s", leader)
+	}
+
 	var filename string
-	var fileData []byte
+	var buf []byte
 
 	for {
 		chunk, err := stream.Recv()
@@ -216,157 +165,126 @@ func (s *primaryServer) StoreFile(stream pb.AFS_StoreFileServer) error {
 		if err != nil {
 			return err
 		}
-		if filename == "" {
-			filename = filepath.Base(chunk.Filename)
+		if filename == "" && chunk.Filename != "" {
+			filename = chunk.Filename
 		}
-		fileData = append(fileData, chunk.Content...)
+		buf = append(buf, chunk.Content...)
 	}
 
 	if filename == "" {
-		return status.Error(codes.InvalidArgument, "empty stream or missing filename")
+		return status.Error(codes.InvalidArgument, "filename missing")
 	}
 
-	s.mu.Lock()
-	cur := s.metadata[filename]
-	var newVersion int32
-	if cur == 0 {
-		newVersion = 1
-	} else {
-		newVersion = cur + 1
-	}
-	s.mu.Unlock()
-
-	totalNodes := 1 + len(s.backups)
-	majority := totalNodes/2 + 1
-
-	type result struct{ ok bool }
-	results := make(chan result, len(s.backups))
-
-	for _, stub := range s.backups {
-		if stub == nil {
-			results <- result{ok: false}
-			continue
-		}
-
-		go func(stub pb.ReplicaClient) {
-			results <- result{ok: s.replicateTo(stub, filename, fileData, newVersion)}
-		}(stub)
-	}
-
-	acks := 1
-	for range s.backups {
-		if r := <-results; r.ok {
-			acks++
-		}
-	}
-
-	if acks < majority {
-		log.Printf("[primary] replication quorum NOT met (%d/%d) for %s", acks, majority, filename)
-		return status.Errorf(codes.Unavailable,
-			"replication quorum not met (%d/%d acks)", acks, majority)
-	}
-
-	log.Printf("[primary] replication quorum met (%d/%d) for %s", acks, majority, filename)
-
-	if err := s.commitLocal(filename, fileData); err != nil {
-		return status.Errorf(codes.Internal, "local commit failed: %v", err)
-	}
-
-	s.mu.Lock()
-	s.metadata[filename] = newVersion
-	s.saveMetadataLocked()
-	s.mu.Unlock()
-
-	return stream.SendAndClose(&pb.StoreResponse{
-		Success:    true,
-		NewVersion: newVersion,
-	})
-}
-
-func (s *primaryServer) replicateTo(stub pb.ReplicaClient, filename string, data []byte, version int32) bool {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	stream, err := stub.ReplicateFile(ctx)
+	version, err := s.raft.Submit(filename, buf)
 	if err != nil {
-		log.Printf("[primary] ReplicateFile open to backup failed: %v", err)
-		return false
-	}
-
-	first := true
-	for off := 0; off < len(data); off += chunkSize {
-		end := off + chunkSize
-		if end > len(data) {
-			end = len(data)
-		}
-
-		chunk := &pb.ReplicateChunk{
-			Filename: filename,
-			Content:  data[off:end],
-		}
-
-		if first {
-			chunk.Version = version
-			first = false
-		}
-
-		if err := stream.Send(chunk); err != nil {
-			log.Printf("[primary] send chunk to backup failed: %v", err)
-			return false
-		}
-	}
-
-	resp, err := stream.CloseAndRecv()
-	if err != nil || !resp.Success {
-		log.Printf("[primary] backup ReplicateFile failed: err=%v success=%v", err, resp.GetSuccess())
-		return false
-	}
-
-	return true
-}
-
-func (s *primaryServer) commitLocal(filename string, data []byte) error {
-	finalPath := s.filePath(filename)
-	tmpPath := finalPath + ".tmp"
-
-	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
 		return err
 	}
 
-	return os.Rename(tmpPath, finalPath)
+	return stream.SendAndClose(&pb.StoreResponse{Success: true, NewVersion: version})
 }
 
+// ─── Raft gRPC service (thin wrapper delegating to RaftNode) ──────────────────
+
+type RaftService struct {
+	pb.UnimplementedRaftServer
+	node *RaftNode
+}
+
+func (rs *RaftService) AppendEntries(ctx context.Context, req *pb.AppendEntriesRequest) (*pb.AppendEntriesResponse, error) {
+	return rs.node.AppendEntries(ctx, req)
+}
+
+func (rs *RaftService) RequestVote(ctx context.Context, req *pb.RequestVoteRequest) (*pb.RequestVoteResponse, error) {
+	return rs.node.RequestVote(ctx, req)
+}
+
+// ─── main ─────────────────────────────────────────────────────────────────────
+
 func main() {
-	portFlag := flag.String("port", ":50051", "listen address for this primary node")
-	backupFlag := flag.String("backups", "", "comma-separated backup addresses")
-	dataFlag := flag.String("data", "./afs_data/server1", "root data directory")
+	selfFlag  := flag.String("self",  "localhost:50051", "this node's address (host:port)")
+	peersFlag := flag.String("peers", "",                "comma-separated addresses of other nodes")
+	dataFlag  := flag.String("data",  "/tmp/afs_data",  "data directory")
+	portFlag  := flag.String("port",  "50051",           "gRPC listen port")
+	cleanFlag := flag.Bool("clean",   false,             "wipe data directory on startup (for testing)")
 	flag.Parse()
 
-	var backupAddrs []string
-	if *backupFlag != "" {
-		for _, a := range strings.Split(*backupFlag, ",") {
-			if a = strings.TrimSpace(a); a != "" {
-				backupAddrs = append(backupAddrs, a)
-			}
+	listenAddr := fmt.Sprintf(":%s", *portFlag)
+	peers := parsePeers(*peersFlag, *selfFlag)
+
+	log.Printf("[server] self=%s  peers=%v  data=%s", *selfFlag, peers, *dataFlag)
+
+	// --clean wipes persisted Raft state so stale terms from a previous run
+	// cannot cause spurious leader elections.
+	if *cleanFlag {
+		logPath := filepath.Join(*dataFlag, "raft_log.json")
+		statePath := filepath.Join(*dataFlag, "raft_state.json")
+		outPath := filepath.Join(*dataFlag, "output")
+		
+		// 1. Delete Raft state files
+		_ = os.Remove(logPath)
+		_ = os.Remove(statePath)
+		
+		// 2. Wipe the entire output directory (removes term_check.txt, primes.txt, etc.)
+		_ = os.RemoveAll(outPath)
+		
+		log.Printf("[server] cleaned Raft state and output directory in %s", *dataFlag)
+	}
+	
+	// Ensure the base data directory exists
+	os.MkdirAll(*dataFlag, 0755)
+
+	store := NewFileStore(*dataFlag)
+
+	// The apply function is called by Raft once an entry is committed.
+	applyFn := func(filename string, data []byte, version int32) {
+		store.Write(filename, data, version)
+		log.Printf("[server] applied: %s v%d (%d bytes)", filename, version, len(data))
+	}
+
+	raftNode := NewRaftNode(*selfFlag, peers, *dataFlag, applyFn)
+
+	lis, err := net.Listen("tcp", listenAddr)
+	if err != nil {
+		log.Fatalf("listen %s: %v", listenAddr, err)
+	}
+
+	grpcServer := grpc.NewServer(
+		grpc.MaxRecvMsgSize(256 * 1024 * 1024), // 256 MB
+		grpc.MaxSendMsgSize(256 * 1024 * 1024), // 256 MB
+	)
+
+	pb.RegisterAFSServer(grpcServer, &AFSService{store: store, raft: raftNode, self: *selfFlag})
+	pb.RegisterRaftServer(grpcServer, &RaftService{node: raftNode})
+
+	// Start gRPC server BEFORE starting Raft so our port is open and we can
+	// respond to RequestVote / AppendEntries from peers immediately.
+	go func() {
+		log.Printf("[server] listening on %s", listenAddr)
+		if err := grpcServer.Serve(lis); err != nil {
+			log.Fatalf("serve: %v", err)
+		}
+	}()
+
+	// Brief grace period so all nodes in the cluster can open their ports
+	// before the first election fires.  This prevents a node that starts
+	// slightly later from loading a high current_term from disk and winning
+	// an instant uncontested election against peers that aren't listening yet.
+	time.Sleep(200 * time.Millisecond)
+
+	raftNode.Run() // blocks forever
+
+}
+
+// parsePeers splits the peers flag, removing the self address if present.
+func parsePeers(peersFlag, self string) []string {
+	var result []string
+	scanner := bufio.NewScanner(strings.NewReader(peersFlag))
+	scanner.Split(bufio.ScanWords)
+	for _, p := range strings.Split(peersFlag, ",") {
+		p = strings.TrimSpace(p)
+		if p != "" && p != self {
+			result = append(result, p)
 		}
 	}
-
-	selfAddr := "localhost" + *portFlag
-
-	srv := newPrimaryServer(selfAddr, backupAddrs, *dataFlag)
-	go srv.runHeartbeats()
-
-	lis, err := net.Listen("tcp", *portFlag)
-	if err != nil {
-		log.Fatalf("failed to listen: %v", err)
-	}
-
-	grpcSrv := grpc.NewServer()
-	pb.RegisterAFSServer(grpcSrv, srv)
-
-	log.Printf("[primary] listening on %s  backups=%v", *portFlag, backupAddrs)
-
-	if err := grpcSrv.Serve(lis); err != nil {
-		log.Fatalf("serve failed: %v", err)
-	}
+	return result
 }

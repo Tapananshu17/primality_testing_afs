@@ -16,26 +16,33 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
+
 	"primality_afs/client"
 	primepb "primality_afs/prime_proto"
+	pb "primality_afs/proto"
 )
+
+// ─── Constants ───────────────────────────────────────────────────────────────
 
 const (
 	chunkSize    = 10000
 	snapshotFile = "snapshot_latest.json"
 	rpcTimeout   = 30 * time.Second
-	snapInterval = 200 * time.Millisecond
+	snapInterval = 100 * time.Millisecond
 	maxRetries   = 3
 
-	// Worker recovery constants.
-	// pingInterval is how long the proxy waits between ping attempts while
-	// a worker is down.
-	pingInterval = 200 * time.Millisecond
-	// workerDeadTimeout is how long a worker is allowed to stay unreachable
-	// before the proxy goroutine gives up entirely and removes it from the pool.
+	pingInterval      = 200 * time.Millisecond
 	workerDeadTimeout = 2 * time.Minute
+
+	leaderDiscoveryTimeout = 30 * time.Second
+	leaderRetryInterval    = 500 * time.Millisecond
+	maxWriteRetries        = 5
 )
+
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 type Stats struct {
 	InputFiles   int
@@ -69,6 +76,132 @@ type WorkerState struct {
 	Offset  int32 `json:"offset"`
 }
 
+// ─── Raft Leadership Helpers ─────────────────────────────────────────────────
+
+func discoverLeader(addrs []string) (string, error) {
+	deadline := time.Now().Add(leaderDiscoveryTimeout)
+	attempt := 0
+
+	for time.Now().Before(deadline) {
+		addr := addrs[attempt%len(addrs)]
+		attempt++
+
+		conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			log.Printf("[coordinator] dial %s for GetPrimary failed: %v", addr, err)
+			time.Sleep(leaderRetryInterval)
+			continue
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		info, err := pb.NewAFSClient(conn).GetPrimary(ctx, &pb.Empty{})
+		cancel()
+		conn.Close()
+
+		if err != nil {
+			log.Printf("[coordinator] GetPrimary(%s) error: %v", addr, err)
+			time.Sleep(leaderRetryInterval)
+			continue
+		}
+
+		if info.IsPrimary && info.Address != "" {
+			return info.Address, nil
+		}
+
+		if info.Address != "" {
+			conn2, err := grpc.Dial(info.Address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+			if err == nil {
+				ctx2, cancel2 := context.WithTimeout(context.Background(), 2*time.Second)
+				info2, err2 := pb.NewAFSClient(conn2).GetPrimary(ctx2, &pb.Empty{})
+				cancel2()
+				conn2.Close()
+
+				if err2 == nil && info2.IsPrimary {
+					return info.Address, nil
+				}
+			}
+		}
+		time.Sleep(leaderRetryInterval)
+	}
+
+	return "", fmt.Errorf("could not discover a Raft leader within %s", leaderDiscoveryTimeout)
+}
+
+func newAFSClientForLeader(allAddrs string, leaderAddr string, cacheDir string) (*client.AFSClient, error) {
+	addrList := leaderAddr
+	for _, a := range strings.Split(allAddrs, ",") {
+		a = strings.TrimSpace(a)
+		if a != "" && a != leaderAddr {
+			addrList += "," + a
+		}
+	}
+	return client.InitAFS(addrList, cacheDir)
+}
+
+func isLeaderRedirect(err error) bool {
+	if err == nil {
+		return false
+	}
+	st, ok := status.FromError(err)
+	if !ok {
+		return false
+	}
+	return st.Code() == codes.FailedPrecondition &&
+		strings.HasPrefix(st.Message(), "not primary")
+}
+
+func splitAddrs(addrs string) []string {
+	var result []string
+	for _, a := range strings.Split(addrs, ",") {
+		a = strings.TrimSpace(a)
+		if a != "" {
+			result = append(result, a)
+		}
+	}
+	return result
+}
+
+func writeToAFSWithRetry(allAddrs, cacheDir, outputFile string, flags int, data []byte) error {
+	addrSlice := splitAddrs(allAddrs)
+
+	for attempt := 1; attempt <= maxWriteRetries; attempt++ {
+		leaderAddr, err := discoverLeader(addrSlice)
+		if err != nil {
+			return fmt.Errorf("leader discovery on attempt %d: %w", attempt, err)
+		}
+
+		afsClient, err := newAFSClientForLeader(allAddrs, leaderAddr, cacheDir)
+		if err != nil {
+			time.Sleep(leaderRetryInterval)
+			continue
+		}
+
+		fd, err := afsClient.AFS_Open(outputFile, flags)
+		if err != nil {
+			if isLeaderRedirect(err) {
+				continue
+			}
+			return fmt.Errorf("open output (attempt %d): %w", attempt, err)
+		}
+
+		_, writeErr := afsClient.AFS_Write(fd, data)
+		afsClient.AFS_Close(fd)
+
+		if writeErr != nil {
+			if isLeaderRedirect(writeErr) {
+				continue
+			}
+			return fmt.Errorf("write output (attempt %d): %w", attempt, writeErr)
+		}
+
+		return nil
+	}
+
+	return fmt.Errorf("exceeded %d retries writing %s to AFS leader", maxWriteRetries, outputFile)
+}
+
+// ─── Snapshot & State Helpers ────────────────────────────────────────────────
+
 func compactRanges(ids []int32) []ChunkRange {
 	if len(ids) == 0 {
 		return nil
@@ -98,7 +231,7 @@ func isCompleted(id int32, ranges []ChunkRange) bool {
 }
 
 func takeSnapshot(
-	afsClient *client.AFSClient,
+	afsAddrs string, cacheDir string,
 	workerClients []primepb.PrimeWorkerClient,
 	outputFile string,
 	primeSet map[uint64]struct{},
@@ -109,8 +242,6 @@ func takeSnapshot(
 	fileChunkMap map[string][]int32,
 	nextChunkID *int,
 ) {
-	log.Println("[SNAPSHOT] Initiating Chandy-Lamport Global Snapshot...")
-
 	primeMu.Lock()
 	totalPrimes := len(primeSet)
 	batchToWrite := make([]uint64, len(*unflushedPrimes))
@@ -124,18 +255,15 @@ func takeSnapshot(
 			out.WriteString(fmt.Sprintf("%d\n", p))
 		}
 
-		wfd, werr := afsClient.AFS_Open(outputFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND)
+		// Use Raft-safe retry wrapper with O_APPEND
+		werr := writeToAFSWithRetry(afsAddrs, cacheDir, outputFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, out.Bytes())
 		if werr == nil {
-			afsClient.AFS_Write(wfd, out.Bytes())
-			afsClient.AFS_Close(wfd)
-
 			primeMu.Lock()
 			*unflushedPrimes = (*unflushedPrimes)[len(batchToWrite):]
 			primeMu.Unlock()
-
 			log.Printf("[SNAPSHOT] Appended %d NEW primes to %s", len(batchToWrite), outputFile)
 		} else {
-			log.Printf("[SNAPSHOT] WARNING: failed to append to %s: %v (primes retained in buffer)", outputFile, werr)
+			log.Printf("[SNAPSHOT] WARNING: failed to append to %s: %v (primes retained)", outputFile, werr)
 		}
 	}
 
@@ -164,10 +292,9 @@ func takeSnapshot(
 	}
 
 	jsonBytes, _ := json.MarshalIndent(snap, "", "  ")
-	sfd, serr := afsClient.AFS_Open(snapshotFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC)
+	// Use Raft-safe retry wrapper with O_TRUNC to overwrite snapshot file
+	serr := writeToAFSWithRetry(afsAddrs, cacheDir, snapshotFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, jsonBytes)
 	if serr == nil {
-		afsClient.AFS_Write(sfd, jsonBytes)
-		afsClient.AFS_Close(sfd)
 		log.Printf("[SNAPSHOT] Saved (total_primes=%d, ranges=%d)", snap.TotalPrimes, len(snap.CompletedRanges))
 	} else {
 		log.Printf("[SNAPSHOT] WARNING: failed to write snapshot JSON: %v", serr)
@@ -229,63 +356,26 @@ func rebuildPrimeSet(afsClient *client.AFSClient, outputFile string) map[uint64]
 			}
 		}
 	}
-
-	if err := sc.Err(); err != nil {
-		log.Printf("[coordinator] WARNING: error reading existing primes.txt: %v", err)
-	}
-
 	return set
 }
 
-// waitForWorkerRecovery pings the worker with CaptureState every pingInterval
-// until the worker responds successfully or workerDeadTimeout elapses.
-//
-// Returns true  → worker is alive again, proxy can resume processing jobs.
-// Returns false → worker never came back within the timeout, proxy should exit.
-//
-// We reuse CaptureState as the ping because it already exists in the proto and
-// is a lightweight no-op when the worker is idle. No proto changes needed.
+// ─── Worker Proxy ────────────────────────────────────────────────────────────
+
 func waitForWorkerRecovery(workerClient primepb.PrimeWorkerClient, workerID int) bool {
-	log.Printf("[worker %d] entering recovery wait (timeout=%s, ping every %s)",
-		workerID, workerDeadTimeout, pingInterval)
-
 	deadline := time.Now().Add(workerDeadTimeout)
-
 	for time.Now().Before(deadline) {
 		time.Sleep(pingInterval)
-
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		_, err := workerClient.CaptureState(ctx, &primepb.SnapshotRequest{Marker: "ping"})
 		cancel()
 
 		if err == nil {
-			log.Printf("[worker %d] is back online — resuming job processing", workerID)
 			return true
 		}
-
-		remaining := time.Until(deadline).Round(time.Second)
-		log.Printf("[worker %d] still unreachable (%v) — will retry for %s more",
-			workerID, err, remaining)
 	}
-
-	log.Printf("[worker %d] did not recover within %s — removing from pool", workerID, workerDeadTimeout)
 	return false
 }
 
-// runWorkerProxy is the goroutine that represents one worker in the coordinator.
-//
-// OLD behaviour (one sentence): on any RPC error it requeued the job, called
-// break, and the goroutine exited forever — the worker slot was permanently lost.
-//
-// NEW behaviour: on RPC error the job is requeued and the goroutine calls
-// waitForWorkerRecovery instead of breaking. If the worker comes back the
-// goroutine resumes pulling jobs normally. If the worker never comes back
-// within workerDeadTimeout the goroutine exits cleanly, shrinking the pool
-// by one without deadlocking the rest of the system.
-//
-// The activeWorkers counter is decremented whenever the goroutine exits so
-// the coordinator can detect the "all workers permanently dead" case and
-// surface it quickly instead of blocking on chunkWg.Wait() forever.
 func runWorkerProxy(
 	workerClient primepb.PrimeWorkerClient,
 	workerID int,
@@ -305,44 +395,51 @@ func runWorkerProxy(
 		cancel()
 
 		if err == nil {
-			// Happy path — forward result and move on.
 			results <- resp
 			chunkWg.Done()
 			continue
 		}
 
-		// ── RPC failed ───────────────────────────────────────────────────────
-		//
-		// 1. Requeue the job immediately so another alive worker can pick it up
-		//    while this one is in recovery. Retries counter is intentionally NOT
-		//    incremented here — the retry limit is for permanent chunk failures,
-		//    not transient worker deaths.
-		log.Printf("[worker %d] RPC error on chunk %d: %v — requeuing and entering recovery",
-			workerID, job.Chunk.Id, err)
+		log.Printf("[worker %d] RPC error on chunk %d: %v — requeuing", workerID, job.Chunk.Id, err)
 		requeueCh <- job
 
-		// 2. Wait until the worker is reachable again (or give up after timeout).
 		recovered := waitForWorkerRecovery(workerClient, workerID)
 		if !recovered {
-			// Worker is permanently gone. Exit the goroutine cleanly.
-			// The jobs channel stays open so remaining alive proxies keep working.
 			return
 		}
-
-		// 3. Worker is back. Loop continues — next iteration pulls the next job.
-		// The requeued job from step 1 will be picked up by whoever is first
-		// (could be this goroutine or any other alive proxy).
 	}
 }
 
-func Run(afsAddrs string, cacheDir string, inputFiles []string, outputFile string, workerAddrs []string, recoverMode bool) (Stats, error) {
+// ─── Main Run Coordinator ────────────────────────────────────────────────────
+
+func Run(
+	afsAddrs string,
+	cacheDir string,
+	inputFiles []string,
+	outputFile string,
+	workerAddrs []string,
+	recoverMode bool,
+) (Stats, error) {
 	startTime := time.Now()
 
-	afsClient, err := client.InitAFS(afsAddrs, cacheDir)
+	// 1. Discover Raft Leader and Connect
+	addrSlice := splitAddrs(afsAddrs)
+	if len(addrSlice) == 0 {
+		return Stats{}, fmt.Errorf("no AFS addresses provided")
+	}
+
+	leaderAddr, err := discoverLeader(addrSlice)
+	if err != nil {
+		return Stats{}, fmt.Errorf("leader discovery: %w", err)
+	}
+
+	log.Printf("[coordinator] connecting to AFS leader: %s", leaderAddr)
+	afsClient, err := newAFSClientForLeader(afsAddrs, leaderAddr, cacheDir)
 	if err != nil {
 		return Stats{}, fmt.Errorf("AFS connect: %w", err)
 	}
 
+	// 2. Recovery State Setup
 	var completedRanges []ChunkRange
 	fileChunkMap := make(map[string][]int32)
 	startChunkID := 0
@@ -361,6 +458,7 @@ func Run(afsAddrs string, cacheDir string, inputFiles []string, outputFile strin
 		}
 	}
 
+	// 3. Connect to Workers
 	var conns []*grpc.ClientConn
 	var grpcClients []primepb.PrimeWorkerClient
 
@@ -378,11 +476,11 @@ func Run(afsAddrs string, cacheDir string, inputFiles []string, outputFile strin
 	}()
 
 	numWorkers := len(grpcClients)
-
 	if numWorkers == 0 {
 		return Stats{}, fmt.Errorf("no workers available")
 	}
 
+	// 4. Setup Channels and Sync Primitives
 	jobs := make(chan Job, numWorkers*4)
 	requeueCh := make(chan Job, numWorkers*4)
 	results := make(chan *primepb.PrimeResult, numWorkers*1000)
@@ -390,9 +488,6 @@ func Run(afsAddrs string, cacheDir string, inputFiles []string, outputFile strin
 	var proxyWg, chunkWg, ingestWg, forwarderWg sync.WaitGroup
 	var primeMu, completedMu, snapshotMutex sync.Mutex
 
-	// activeWorkers tracks how many proxy goroutines are still alive.
-	// When it hits zero while chunkWg is still > 0, all workers are permanently
-	// dead and we will never finish — we detect this below and bail out.
 	var activeWorkers atomic.Int32
 	activeWorkers.Store(int32(numWorkers))
 
@@ -407,6 +502,7 @@ func Run(afsAddrs string, cacheDir string, inputFiles []string, outputFile strin
 	snapCtx, snapCancel := context.WithCancel(context.Background())
 	defer snapCancel()
 
+	// Ingestion loop
 	ingestWg.Add(1)
 	go func() {
 		defer ingestWg.Done()
@@ -430,6 +526,7 @@ func Run(afsAddrs string, cacheDir string, inputFiles []string, outputFile strin
 		}
 	}()
 
+	// Retry loop
 	forwarderWg.Add(1)
 	go func() {
 		defer forwarderWg.Done()
@@ -438,6 +535,7 @@ func Run(afsAddrs string, cacheDir string, inputFiles []string, outputFile strin
 		}
 	}()
 
+	// Periodic Snapshot loop
 	go func() {
 		ticker := time.NewTicker(snapInterval)
 		defer ticker.Stop()
@@ -446,7 +544,7 @@ func Run(afsAddrs string, cacheDir string, inputFiles []string, outputFile strin
 			case <-ticker.C:
 				snapshotMutex.Lock()
 				takeSnapshot(
-					afsClient, grpcClients, outputFile,
+					afsAddrs, cacheDir, grpcClients, outputFile,
 					primeSet, &unflushedPrimes, &primeMu,
 					&completedMu, &completedIDs,
 					fileChunkMap, &nextChunkID,
@@ -458,19 +556,13 @@ func Run(afsAddrs string, cacheDir string, inputFiles []string, outputFile strin
 		}
 	}()
 
-	// Launch one proxy goroutine per worker.
-	// Each goroutine now survives individual RPC failures and re-joins the job
-	// pool automatically when its worker recovers (see runWorkerProxy).
+	// Start Worker Proxies
 	for i, c := range grpcClients {
 		proxyWg.Add(1)
 		go runWorkerProxy(c, i+1, jobs, requeueCh, results, &chunkWg, &proxyWg, &activeWorkers)
 	}
 
-	// Watchdog: polls every second. If all proxy goroutines have exited while
-	// there is still pending work, every worker is permanently dead and we
-	// will deadlock on chunkWg.Wait(). Detect this early and fatal out with
-	// a clear message so the operator knows to restart workers and re-run
-	// with --recover.
+	// Watchdog
 	watchdogDone := make(chan struct{})
 	go func() {
 		defer close(watchdogDone)
@@ -480,12 +572,8 @@ func Run(afsAddrs string, cacheDir string, inputFiles []string, outputFile strin
 			select {
 			case <-ticker.C:
 				if activeWorkers.Load() == 0 {
-					// All proxies are gone. Check if work is still pending by
-					// inspecting the jobs channel. If it is non-empty we are
-					// stuck — no one can drain it.
 					if len(jobs) > 0 {
-						log.Fatalf("[coordinator] ALL workers permanently dead with %d chunks still pending — "+
-							"restart workers and re-run with --recover", len(jobs))
+						log.Fatalf("[coordinator] ALL workers permanently dead — restart and re-run with --recover")
 					}
 					return
 				}
@@ -495,6 +583,7 @@ func Run(afsAddrs string, cacheDir string, inputFiles []string, outputFile strin
 		}
 	}()
 
+	// 5. Read inputs and generate jobs
 	totalNumbers := 0
 	chunkID := 0
 
@@ -561,16 +650,13 @@ func Run(afsAddrs string, cacheDir string, inputFiles []string, outputFile strin
 				flush()
 			}
 		}
-
-		if err := scanner.Err(); err != nil {
-			log.Printf("[coordinator] FATAL: scanner error reading %s: %v", filename, err)
-		}
 		flush()
 	}
 
+	// 6. Tear down
 	chunkWg.Wait()
 	snapCancel()
-	<-watchdogDone   // let the watchdog goroutine exit cleanly
+	<-watchdogDone
 	close(requeueCh)
 	forwarderWg.Wait()
 	close(jobs)
@@ -578,9 +664,10 @@ func Run(afsAddrs string, cacheDir string, inputFiles []string, outputFile strin
 	close(results)
 	ingestWg.Wait()
 
+	// 7. Final Snapshot
 	snapshotMutex.Lock()
 	takeSnapshot(
-		afsClient, grpcClients, outputFile,
+		afsAddrs, cacheDir, grpcClients, outputFile,
 		primeSet, &unflushedPrimes, &primeMu,
 		&completedMu, &completedIDs,
 		fileChunkMap, &nextChunkID,

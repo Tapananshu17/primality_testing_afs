@@ -621,6 +621,355 @@ func (x *HeartbeatResponse) GetOk() bool {
 	return false
 }
 
+type LogEntry struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Term          int64                  `protobuf:"varint,1,opt,name=term,proto3" json:"term,omitempty"`        // term when entry was received by leader
+	Index         int64                  `protobuf:"varint,2,opt,name=index,proto3" json:"index,omitempty"`      // 1-based position in the log
+	Filename      string                 `protobuf:"bytes,3,opt,name=filename,proto3" json:"filename,omitempty"` // file being written
+	Data          []byte                 `protobuf:"bytes,4,opt,name=data,proto3" json:"data,omitempty"`         // full file contents
+	Version       int32                  `protobuf:"varint,5,opt,name=version,proto3" json:"version,omitempty"`  // file version assigned by leader
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LogEntry) Reset() {
+	*x = LogEntry{}
+	mi := &file_proto_afs_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LogEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LogEntry) ProtoMessage() {}
+
+func (x *LogEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_afs_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LogEntry.ProtoReflect.Descriptor instead.
+func (*LogEntry) Descriptor() ([]byte, []int) {
+	return file_proto_afs_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *LogEntry) GetTerm() int64 {
+	if x != nil {
+		return x.Term
+	}
+	return 0
+}
+
+func (x *LogEntry) GetIndex() int64 {
+	if x != nil {
+		return x.Index
+	}
+	return 0
+}
+
+func (x *LogEntry) GetFilename() string {
+	if x != nil {
+		return x.Filename
+	}
+	return ""
+}
+
+func (x *LogEntry) GetData() []byte {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
+func (x *LogEntry) GetVersion() int32 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+type AppendEntriesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Term          int64                  `protobuf:"varint,1,opt,name=term,proto3" json:"term,omitempty"`                                       // leader's current term
+	LeaderId      string                 `protobuf:"bytes,2,opt,name=leader_id,json=leaderId,proto3" json:"leader_id,omitempty"`                // leader's address (so followers can redirect clients)
+	PrevLogIndex  int64                  `protobuf:"varint,3,opt,name=prev_log_index,json=prevLogIndex,proto3" json:"prev_log_index,omitempty"` // index of log entry immediately before new ones
+	PrevLogTerm   int64                  `protobuf:"varint,4,opt,name=prev_log_term,json=prevLogTerm,proto3" json:"prev_log_term,omitempty"`    // term of prev_log_index entry
+	Entries       []*LogEntry            `protobuf:"bytes,5,rep,name=entries,proto3" json:"entries,omitempty"`                                  // empty for heartbeat
+	LeaderCommit  int64                  `protobuf:"varint,6,opt,name=leader_commit,json=leaderCommit,proto3" json:"leader_commit,omitempty"`   // leader's commitIndex
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AppendEntriesRequest) Reset() {
+	*x = AppendEntriesRequest{}
+	mi := &file_proto_afs_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AppendEntriesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AppendEntriesRequest) ProtoMessage() {}
+
+func (x *AppendEntriesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_afs_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AppendEntriesRequest.ProtoReflect.Descriptor instead.
+func (*AppendEntriesRequest) Descriptor() ([]byte, []int) {
+	return file_proto_afs_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *AppendEntriesRequest) GetTerm() int64 {
+	if x != nil {
+		return x.Term
+	}
+	return 0
+}
+
+func (x *AppendEntriesRequest) GetLeaderId() string {
+	if x != nil {
+		return x.LeaderId
+	}
+	return ""
+}
+
+func (x *AppendEntriesRequest) GetPrevLogIndex() int64 {
+	if x != nil {
+		return x.PrevLogIndex
+	}
+	return 0
+}
+
+func (x *AppendEntriesRequest) GetPrevLogTerm() int64 {
+	if x != nil {
+		return x.PrevLogTerm
+	}
+	return 0
+}
+
+func (x *AppendEntriesRequest) GetEntries() []*LogEntry {
+	if x != nil {
+		return x.Entries
+	}
+	return nil
+}
+
+func (x *AppendEntriesRequest) GetLeaderCommit() int64 {
+	if x != nil {
+		return x.LeaderCommit
+	}
+	return 0
+}
+
+type AppendEntriesResponse struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Term    int64                  `protobuf:"varint,1,opt,name=term,proto3" json:"term,omitempty"` // currentTerm, for leader to update itself
+	Success bool                   `protobuf:"varint,2,opt,name=success,proto3" json:"success,omitempty"`
+	// Optimised back-tracking: follower hints the correct nextIndex
+	ConflictIndex int64 `protobuf:"varint,3,opt,name=conflict_index,json=conflictIndex,proto3" json:"conflict_index,omitempty"` // first index of conflicting term (0 if none)
+	ConflictTerm  int64 `protobuf:"varint,4,opt,name=conflict_term,json=conflictTerm,proto3" json:"conflict_term,omitempty"`    // term of conflicting entry (0 if none)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AppendEntriesResponse) Reset() {
+	*x = AppendEntriesResponse{}
+	mi := &file_proto_afs_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AppendEntriesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AppendEntriesResponse) ProtoMessage() {}
+
+func (x *AppendEntriesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_afs_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AppendEntriesResponse.ProtoReflect.Descriptor instead.
+func (*AppendEntriesResponse) Descriptor() ([]byte, []int) {
+	return file_proto_afs_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *AppendEntriesResponse) GetTerm() int64 {
+	if x != nil {
+		return x.Term
+	}
+	return 0
+}
+
+func (x *AppendEntriesResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *AppendEntriesResponse) GetConflictIndex() int64 {
+	if x != nil {
+		return x.ConflictIndex
+	}
+	return 0
+}
+
+func (x *AppendEntriesResponse) GetConflictTerm() int64 {
+	if x != nil {
+		return x.ConflictTerm
+	}
+	return 0
+}
+
+type RequestVoteRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Term          int64                  `protobuf:"varint,1,opt,name=term,proto3" json:"term,omitempty"`                                       // candidate's term
+	CandidateId   string                 `protobuf:"bytes,2,opt,name=candidate_id,json=candidateId,proto3" json:"candidate_id,omitempty"`       // candidate's address
+	LastLogIndex  int64                  `protobuf:"varint,3,opt,name=last_log_index,json=lastLogIndex,proto3" json:"last_log_index,omitempty"` // index of candidate's last log entry
+	LastLogTerm   int64                  `protobuf:"varint,4,opt,name=last_log_term,json=lastLogTerm,proto3" json:"last_log_term,omitempty"`    // term  of candidate's last log entry
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RequestVoteRequest) Reset() {
+	*x = RequestVoteRequest{}
+	mi := &file_proto_afs_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RequestVoteRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RequestVoteRequest) ProtoMessage() {}
+
+func (x *RequestVoteRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_afs_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RequestVoteRequest.ProtoReflect.Descriptor instead.
+func (*RequestVoteRequest) Descriptor() ([]byte, []int) {
+	return file_proto_afs_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *RequestVoteRequest) GetTerm() int64 {
+	if x != nil {
+		return x.Term
+	}
+	return 0
+}
+
+func (x *RequestVoteRequest) GetCandidateId() string {
+	if x != nil {
+		return x.CandidateId
+	}
+	return ""
+}
+
+func (x *RequestVoteRequest) GetLastLogIndex() int64 {
+	if x != nil {
+		return x.LastLogIndex
+	}
+	return 0
+}
+
+func (x *RequestVoteRequest) GetLastLogTerm() int64 {
+	if x != nil {
+		return x.LastLogTerm
+	}
+	return 0
+}
+
+type RequestVoteResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Term          int64                  `protobuf:"varint,1,opt,name=term,proto3" json:"term,omitempty"` // currentTerm, for candidate to update itself
+	VoteGranted   bool                   `protobuf:"varint,2,opt,name=vote_granted,json=voteGranted,proto3" json:"vote_granted,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RequestVoteResponse) Reset() {
+	*x = RequestVoteResponse{}
+	mi := &file_proto_afs_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RequestVoteResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RequestVoteResponse) ProtoMessage() {}
+
+func (x *RequestVoteResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_afs_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RequestVoteResponse.ProtoReflect.Descriptor instead.
+func (*RequestVoteResponse) Descriptor() ([]byte, []int) {
+	return file_proto_afs_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *RequestVoteResponse) GetTerm() int64 {
+	if x != nil {
+		return x.Term
+	}
+	return 0
+}
+
+func (x *RequestVoteResponse) GetVoteGranted() bool {
+	if x != nil {
+		return x.VoteGranted
+	}
+	return false
+}
+
 var File_proto_afs_proto protoreflect.FileDescriptor
 
 const file_proto_afs_proto_rawDesc = "" +
@@ -661,14 +1010,43 @@ const file_proto_afs_proto_rawDesc = "" +
 	"\fprimary_addr\x18\x01 \x01(\tR\vprimaryAddr\x12\x12\n" +
 	"\x04term\x18\x02 \x01(\x05R\x04term\"#\n" +
 	"\x11HeartbeatResponse\x12\x0e\n" +
-	"\x02ok\x18\x01 \x01(\bR\x02ok2\xcf\x01\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\"~\n" +
+	"\bLogEntry\x12\x12\n" +
+	"\x04term\x18\x01 \x01(\x03R\x04term\x12\x14\n" +
+	"\x05index\x18\x02 \x01(\x03R\x05index\x12\x1a\n" +
+	"\bfilename\x18\x03 \x01(\tR\bfilename\x12\x12\n" +
+	"\x04data\x18\x04 \x01(\fR\x04data\x12\x18\n" +
+	"\aversion\x18\x05 \x01(\x05R\aversion\"\xdf\x01\n" +
+	"\x14AppendEntriesRequest\x12\x12\n" +
+	"\x04term\x18\x01 \x01(\x03R\x04term\x12\x1b\n" +
+	"\tleader_id\x18\x02 \x01(\tR\bleaderId\x12$\n" +
+	"\x0eprev_log_index\x18\x03 \x01(\x03R\fprevLogIndex\x12\"\n" +
+	"\rprev_log_term\x18\x04 \x01(\x03R\vprevLogTerm\x12'\n" +
+	"\aentries\x18\x05 \x03(\v2\r.afs.LogEntryR\aentries\x12#\n" +
+	"\rleader_commit\x18\x06 \x01(\x03R\fleaderCommit\"\x91\x01\n" +
+	"\x15AppendEntriesResponse\x12\x12\n" +
+	"\x04term\x18\x01 \x01(\x03R\x04term\x12\x18\n" +
+	"\asuccess\x18\x02 \x01(\bR\asuccess\x12%\n" +
+	"\x0econflict_index\x18\x03 \x01(\x03R\rconflictIndex\x12#\n" +
+	"\rconflict_term\x18\x04 \x01(\x03R\fconflictTerm\"\x95\x01\n" +
+	"\x12RequestVoteRequest\x12\x12\n" +
+	"\x04term\x18\x01 \x01(\x03R\x04term\x12!\n" +
+	"\fcandidate_id\x18\x02 \x01(\tR\vcandidateId\x12$\n" +
+	"\x0elast_log_index\x18\x03 \x01(\x03R\flastLogIndex\x12\"\n" +
+	"\rlast_log_term\x18\x04 \x01(\x03R\vlastLogTerm\"L\n" +
+	"\x13RequestVoteResponse\x12\x12\n" +
+	"\x04term\x18\x01 \x01(\x03R\x04term\x12!\n" +
+	"\fvote_granted\x18\x02 \x01(\bR\vvoteGranted2\xcf\x01\n" +
 	"\x03AFS\x127\n" +
 	"\bTestAuth\x12\x14.afs.TestAuthRequest\x1a\x15.afs.TestAuthResponse\x12/\n" +
 	"\tFetchFile\x12\x10.afs.FileRequest\x1a\x0e.afs.FileChunk0\x01\x122\n" +
 	"\tStoreFile\x12\x0f.afs.StoreChunk\x1a\x12.afs.StoreResponse(\x01\x12*\n" +
 	"\n" +
 	"GetPrimary\x12\n" +
-	".afs.Empty\x1a\x10.afs.PrimaryInfo2\x85\x01\n" +
+	".afs.Empty\x1a\x10.afs.PrimaryInfo2\x90\x01\n" +
+	"\x04Raft\x12F\n" +
+	"\rAppendEntries\x12\x19.afs.AppendEntriesRequest\x1a\x1a.afs.AppendEntriesResponse\x12@\n" +
+	"\vRequestVote\x12\x17.afs.RequestVoteRequest\x1a\x18.afs.RequestVoteResponse2\x85\x01\n" +
 	"\aReplica\x12>\n" +
 	"\rReplicateFile\x12\x13.afs.ReplicateChunk\x1a\x16.afs.ReplicateResponse(\x01\x12:\n" +
 	"\tHeartbeat\x12\x15.afs.HeartbeatRequest\x1a\x16.afs.HeartbeatResponseB\x12Z\x10primality_afs/pbb\x06proto3"
@@ -685,39 +1063,49 @@ func file_proto_afs_proto_rawDescGZIP() []byte {
 	return file_proto_afs_proto_rawDescData
 }
 
-var file_proto_afs_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_proto_afs_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_proto_afs_proto_goTypes = []any{
-	(*TestAuthRequest)(nil),   // 0: afs.TestAuthRequest
-	(*TestAuthResponse)(nil),  // 1: afs.TestAuthResponse
-	(*FileRequest)(nil),       // 2: afs.FileRequest
-	(*FileChunk)(nil),         // 3: afs.FileChunk
-	(*StoreChunk)(nil),        // 4: afs.StoreChunk
-	(*StoreResponse)(nil),     // 5: afs.StoreResponse
-	(*Empty)(nil),             // 6: afs.Empty
-	(*PrimaryInfo)(nil),       // 7: afs.PrimaryInfo
-	(*ReplicateChunk)(nil),    // 8: afs.ReplicateChunk
-	(*ReplicateResponse)(nil), // 9: afs.ReplicateResponse
-	(*HeartbeatRequest)(nil),  // 10: afs.HeartbeatRequest
-	(*HeartbeatResponse)(nil), // 11: afs.HeartbeatResponse
+	(*TestAuthRequest)(nil),       // 0: afs.TestAuthRequest
+	(*TestAuthResponse)(nil),      // 1: afs.TestAuthResponse
+	(*FileRequest)(nil),           // 2: afs.FileRequest
+	(*FileChunk)(nil),             // 3: afs.FileChunk
+	(*StoreChunk)(nil),            // 4: afs.StoreChunk
+	(*StoreResponse)(nil),         // 5: afs.StoreResponse
+	(*Empty)(nil),                 // 6: afs.Empty
+	(*PrimaryInfo)(nil),           // 7: afs.PrimaryInfo
+	(*ReplicateChunk)(nil),        // 8: afs.ReplicateChunk
+	(*ReplicateResponse)(nil),     // 9: afs.ReplicateResponse
+	(*HeartbeatRequest)(nil),      // 10: afs.HeartbeatRequest
+	(*HeartbeatResponse)(nil),     // 11: afs.HeartbeatResponse
+	(*LogEntry)(nil),              // 12: afs.LogEntry
+	(*AppendEntriesRequest)(nil),  // 13: afs.AppendEntriesRequest
+	(*AppendEntriesResponse)(nil), // 14: afs.AppendEntriesResponse
+	(*RequestVoteRequest)(nil),    // 15: afs.RequestVoteRequest
+	(*RequestVoteResponse)(nil),   // 16: afs.RequestVoteResponse
 }
 var file_proto_afs_proto_depIdxs = []int32{
-	0,  // 0: afs.AFS.TestAuth:input_type -> afs.TestAuthRequest
-	2,  // 1: afs.AFS.FetchFile:input_type -> afs.FileRequest
-	4,  // 2: afs.AFS.StoreFile:input_type -> afs.StoreChunk
-	6,  // 3: afs.AFS.GetPrimary:input_type -> afs.Empty
-	8,  // 4: afs.Replica.ReplicateFile:input_type -> afs.ReplicateChunk
-	10, // 5: afs.Replica.Heartbeat:input_type -> afs.HeartbeatRequest
-	1,  // 6: afs.AFS.TestAuth:output_type -> afs.TestAuthResponse
-	3,  // 7: afs.AFS.FetchFile:output_type -> afs.FileChunk
-	5,  // 8: afs.AFS.StoreFile:output_type -> afs.StoreResponse
-	7,  // 9: afs.AFS.GetPrimary:output_type -> afs.PrimaryInfo
-	9,  // 10: afs.Replica.ReplicateFile:output_type -> afs.ReplicateResponse
-	11, // 11: afs.Replica.Heartbeat:output_type -> afs.HeartbeatResponse
-	6,  // [6:12] is the sub-list for method output_type
-	0,  // [0:6] is the sub-list for method input_type
-	0,  // [0:0] is the sub-list for extension type_name
-	0,  // [0:0] is the sub-list for extension extendee
-	0,  // [0:0] is the sub-list for field type_name
+	12, // 0: afs.AppendEntriesRequest.entries:type_name -> afs.LogEntry
+	0,  // 1: afs.AFS.TestAuth:input_type -> afs.TestAuthRequest
+	2,  // 2: afs.AFS.FetchFile:input_type -> afs.FileRequest
+	4,  // 3: afs.AFS.StoreFile:input_type -> afs.StoreChunk
+	6,  // 4: afs.AFS.GetPrimary:input_type -> afs.Empty
+	13, // 5: afs.Raft.AppendEntries:input_type -> afs.AppendEntriesRequest
+	15, // 6: afs.Raft.RequestVote:input_type -> afs.RequestVoteRequest
+	8,  // 7: afs.Replica.ReplicateFile:input_type -> afs.ReplicateChunk
+	10, // 8: afs.Replica.Heartbeat:input_type -> afs.HeartbeatRequest
+	1,  // 9: afs.AFS.TestAuth:output_type -> afs.TestAuthResponse
+	3,  // 10: afs.AFS.FetchFile:output_type -> afs.FileChunk
+	5,  // 11: afs.AFS.StoreFile:output_type -> afs.StoreResponse
+	7,  // 12: afs.AFS.GetPrimary:output_type -> afs.PrimaryInfo
+	14, // 13: afs.Raft.AppendEntries:output_type -> afs.AppendEntriesResponse
+	16, // 14: afs.Raft.RequestVote:output_type -> afs.RequestVoteResponse
+	9,  // 15: afs.Replica.ReplicateFile:output_type -> afs.ReplicateResponse
+	11, // 16: afs.Replica.Heartbeat:output_type -> afs.HeartbeatResponse
+	9,  // [9:17] is the sub-list for method output_type
+	1,  // [1:9] is the sub-list for method input_type
+	1,  // [1:1] is the sub-list for extension type_name
+	1,  // [1:1] is the sub-list for extension extendee
+	0,  // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_proto_afs_proto_init() }
@@ -731,9 +1119,9 @@ func file_proto_afs_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_afs_proto_rawDesc), len(file_proto_afs_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   12,
+			NumMessages:   17,
 			NumExtensions: 0,
-			NumServices:   2,
+			NumServices:   3,
 		},
 		GoTypes:           file_proto_afs_proto_goTypes,
 		DependencyIndexes: file_proto_afs_proto_depIdxs,
