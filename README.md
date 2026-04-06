@@ -47,9 +47,6 @@ go run ./coordinator_worker/
 
 
 ## Run commands:
-go run server/main.go --port :50051 --data ./afs_data/server1
-chmod +x run_cluster.sh
-./run_cluster.sh
-pkill -f "mode=worker"
-
-./test_01_normal.sh
+To run any bash script:
+1. Create an executable first using: chmod +x <name_of_the_file>.sh
+2. Run the file: ./<name_of_the_file>.sh
