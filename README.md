@@ -9,19 +9,45 @@ protoc --go_out=. --go_opt=paths=source_relative \
 # 3. Download gRPC dependencies
 go mod tidy
 
-# Steps to run:
+# 4. Running the Raft Cluster
 
-   Terminal 1 (primary):
-     go run ./server --port :50051 --backups localhost:50052,localhost:50053 --data ./afs_data/server1
+Start three nodes in separate terminals. The `--clean` flag resets persisted state (useful for testing).
 
-   Terminal 2 (backup 1):
-     go run ./backup --port :50052 --primary localhost:50051 --peers localhost:50053 --data ./afs_data/server2
+### Node 1
+```bash
+go run ./server \
+  --self localhost:50051 \
+  --peers localhost:50052,localhost:50053 \
+  --data ./afs_data/server1 \
+  --port 50051 \
+  --clean
+```
 
-   Terminal 3 (backup 2):
-     go run ./backup --port :50053 --primary localhost:50051 --peers localhost:50052 --data ./afs_data/server3
+### Node 2
+```bash
+go run ./server \
+  --self localhost:50052 \
+  --peers localhost:50053,localhost:50051 \
+  --data ./afs_data/server2 \
+  --port 50052 \
+  --clean
+```
 
- Then run this file:
-   go run test.go
+### Node 3
+```bash
+go run ./server \
+  --self localhost:50053 \
+  --peers localhost:50051,localhost:50052 \
+  --data ./afs_data/server3 \
+  --port 50053 \
+  --clean
+```
+
+### Run via Script
+```bash
+chmod +x run_cluster.sh
+./run_cluster.sh
+```
 
  The demo runs seven scenarios in sequence:
    1. Basic read from primary
