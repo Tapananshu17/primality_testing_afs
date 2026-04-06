@@ -7,7 +7,7 @@ option go_package = "primality_afs/prime_proto;primepb";
 message WorkChunk {
     int32 id = 1;
     repeated uint64 values = 2;
-    int32 start_offset = 3;  // FIX #3: Added offset for worker recovery
+    int32 start_offset = 3;  
 }
 
 message PrimeResult {

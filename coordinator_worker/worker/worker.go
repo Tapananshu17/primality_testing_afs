@@ -28,13 +28,11 @@ func (s *Server) ProcessChunk(ctx context.Context, req *primepb.WorkChunk) (*pri
 	s.isProcessing = true
 	s.mu.Unlock()
 
-	// FIX #3: Start from the offset provided by the coordinator
 	startOffset := req.StartOffset
 	atomic.StoreInt32(&s.currentOffset, startOffset)
 
 	var primes []uint64
 
-	// Start looping from startOffset instead of 0
 	for i := startOffset; i < int32(len(req.Values)); i++ {
 		n := req.Values[i]
 		
