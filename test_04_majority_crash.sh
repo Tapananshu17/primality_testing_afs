@@ -32,12 +32,12 @@ COORD_PID=$!
 echo "Letting system process for 0.35 seconds..."
 sleep 0.35 
 
-echo "⚡ CATASTROPHE: KILLING MAJORITY (3/5) WORKERS! ⚡"
+echo " CATASTROPHE: KILLING MAJORITY (3/5) WORKERS! "
 pkill -f "mode=worker --id=3"
 pkill -f "mode=worker --id=4"
 pkill -f "mode=worker --id=5"
 
-echo "⏳ Workers 1 and 2 are taking over the massive load... ⏳"
+echo " Workers 1 and 2 are taking over the massive load... "
 # Wait just 0.4 seconds so the 2 survivors don't finish the entire dataset
 sleep 0.4
 

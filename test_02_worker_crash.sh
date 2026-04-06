@@ -35,15 +35,15 @@ COORD_PID=$!
 echo "Letting system process for 0.4 seconds..."
 sleep 0.4 
 
-echo "💀 FATAL: KILLING WORKER 2 NOW! 💀"
+echo " FATAL: KILLING WORKER 2 NOW! "
 pkill -f "mode=worker --id=2"
 
-echo "⏳ Watch the logs! Workers 1 and 3 are now carrying the load... ⏳"
+echo " Workers 1 and 3 are now carrying the load... "
 # We sleep for 0.5 seconds so you can clearly see W1 and W3 doing the work
 # while W2's proxy goroutine logs that it is waiting/pinging.
 sleep 0.5
 
-echo "⚕️ RESTARTING WORKER 2! Watch it instantly rejoin... ⚕️"
+echo " RESTARTING WORKER 2! Watch it instantly rejoin... "
 ./prime_app --mode=worker --id=2 --port=:6002 &
 
 echo "Waiting for the Coordinator to finish the job..."
