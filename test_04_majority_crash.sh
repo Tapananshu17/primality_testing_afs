@@ -76,8 +76,8 @@ echo "=== Starting Coordinator ==="
     --workers="$WORKER_ADDRS" &
 COORD_PID=$!
 
-echo "Letting system process for 0.05 seconds..."
-sleep 0.05 
+echo "Letting system process for 0.5 seconds..."
+sleep 0.5 
 
 echo " CATASTROPHE: KILLING MAJORITY (3/5) WORKERS! "
 pkill -f "mode=worker --id=3" || true

@@ -71,8 +71,8 @@ echo "--- Starting Coordinator ---"
     --workers="$WORKER_ADDRS" &
 COORD_PID=$!
 
-echo "Letting system process for 0.1 seconds..."
-sleep 0.1
+echo "Letting system process for 0.5 seconds..."
+sleep 0.5
 
 echo "FATAL: KILLING WORKER 2 NOW! "
 pkill -f "id=2" || true
